@@ -1,0 +1,5 @@
+polars
+duckdb
+fastexcel
+openpyxl
+pyarrow

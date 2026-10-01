@@ -1,0 +1,159 @@
+============================================================
+TraceX — Phase 1 Dataset Validation Report
+============================================================
+
+1. Product Information
+Name: TraceX
+Type: Cyber Money Trail Intelligence Platform
+
+2. Requirements Source
+Source: Problem Statement.pdf
+
+3. Dataset Information
+Source: data/Dataset_VoidHacks.xlsx
+
+4. Workbook Information
+Number of sheets: 2
+Sheet names: ['Transactions', 'Summary']
+
+5. Sheet Information
+Sheet 'Transactions': 149731 rows, 10 columns
+Sheet 'Summary': 4 rows, 2 columns
+
+6. Transaction Row Count
+Total transaction rows: 149730
+First 5 records:
+['TXN401119292', 'KKBK10000000', 'ICIC10000335', 'KKBK0001000', 'ICIC0001335', 455541.6, '########', 'IMPS', 'UPI/REF/TASK_EARNING_REFUND_', '103.114.236.26']
+['TXN953843067', 'ICIC10000335', 'PYTM10000679', 'ICIC0001335', 'PYTM0001679', 21910.87, '########', 'IMPS', 'IMPS/P2A/INTERNAL_SETTLEMENT', '185.90.141.148']
+['TXN515751130', 'PYTM10000679', 'AIRP10001372', 'PYTM0001679', 'AIRP0002372', 1034.44, '########', 'UPI', 'UPI/WALLET_LOAD/P2P_CRYPTO_2', '194.159.153.195']
+['TXN892472963', 'ICIC10000335', 'HDFC10000815', 'ICIC0001335', 'HDFC0001815', 88737.26, '########', 'IMPS', 'IMPS/P2A/INTERNAL_SETTLEMENT', '185.22.55.160']
+['TXN195243830', 'HDFC10000815', 'BARB10001377', 'HDFC0001815', 'BARB0002377', 85187.77, '########', 'UPI', 'UPI/WALLET_LOAD/P2P_CRYPTO_7', '194.244.179.208']
+Last 5 records:
+['TXN526838439', 'BARB10013518', 'AIRP10015944', 'BARB0005519', 'AIRP0007945', 5594.18, '########', 'IMPS', 'UPI/Merchant/QR#97299', '103.30.183.154']
+['TXN199182546', 'PYTM10007846', 'IPOS10012167', 'PYTM0008846', 'IPOS0004168', 786.19, '########', 'NEFT', 'UPI/Pharmacy/Health#53738', '103.59.219.71']
+['TXN902462291', 'BARB10002053', 'PYTM10016058', 'BARB0003053', 'PYTM0008059', 107.16, '########', 'UPI', 'UPI/Grocery/Store#22746', '103.127.105.218']
+['TXN772070879', 'AIRP10017762', 'IPOS10016243', 'AIRP0009763', 'IPOS0008244', 1475.21, '########', 'UPI', 'UPI/Grocery/Store#81450', '103.222.36.225']
+['TXN982030723', 'BARB10014928', 'AXIS10015310', 'BARB0006929', 'AXIS0007311', 1031.07, '########', 'UPI', 'UPI/Pharmacy/Health#66865', '103.161.43.25']
+
+7. Expected Dataset Schema
+Transaction_ID, Sender_Account, Receiver_Account, Sender_IFSC, Receiver_IFSC, Amount, Timestamp, Payment_Mode, Narration, IP_Address, Device_Type
+
+8. Actual Dataset Schema
+Transaction_ID, Sender_Account, Receiver_Account, Sender_IFSC, Receiver_IFSC, Amount, Timestamp, Payment_Mode, Narration, IP_Address
+
+9. Present Fields
+Transaction_ID, Sender_Account, Receiver_Account, Sender_IFSC, Receiver_IFSC, Amount, Timestamp, Payment_Mode, Narration, IP_Address
+
+10. Missing Required Fields
+Device_Type is specified by the Problem Statement but is not present in the supplied Excel dataset.
+
+11. Unexpected Fields
+None
+
+12. Data Types
+Transaction_ID: str
+Sender_Account: str
+Receiver_Account: str
+Sender_IFSC: str
+Receiver_IFSC: str
+Amount: int, float
+Timestamp: str
+Payment_Mode: str
+Narration: str
+IP_Address: str
+
+13. Transaction ID Quality
+Total: 149730
+Missing: 0
+Unique: 149714
+Duplicate: 16
+First 10 examples:
+TXN401119292, TXN953843067, TXN515751130, TXN892472963, TXN195243830, TXN806422153, TXN968195900, TXN214780864, TXN588978512, TXN195086983
+
+14. Account Quality
+Missing Sender Accounts: 0
+Missing Receiver Accounts: 0
+Unique Sender Accounts: 24442
+Unique Receiver Accounts: 24522
+Unique Accounts Overall: 24873
+Accounts appearing as both: 24091
+
+15. Sender/Receiver Relationship Statistics
+Unique Sender -> Receiver pairs: 149684
+Repeated Sender -> Receiver pairs: 46
+
+16. Amount Statistics
+Total Amount: 474099762.9199955
+Minimum Amount: 1.13
+Maximum Amount: 499824.0
+Average Amount: 3166.3645423094604
+Zero Amount Count: 0
+Negative Amount Count: 0
+Missing Amount Count: 0
+Invalid Amount Count: 0
+
+17. Timestamp Statistics
+Underlying Type: ['str']
+Valid Datetime Count: 0
+Invalid Datetime Count: 149730
+Missing Datetime Count: 0
+Earliest Valid Timestamp: None
+Latest Valid Timestamp: None
+Sample Timestamps: ['########', '########', '########', '########', '########']
+
+18. Payment Mode Statistics
+IMPS | 33738
+UPI | 97038
+RTGS | 4417
+NEFT | 14537
+
+19. Narration Statistics
+Missing Count: 0
+Unique Count: 138501
+First 20 examples:
+UPI/REF/TASK_EARNING_REFUND_
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_2
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_7
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_9
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_9
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_8
+UPI/REF/TASK_EARNING_REFUND_
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_7
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_1
+IMPS/P2A/INTERNAL_SETTLEMENT
+UPI/WALLET_LOAD/P2P_CRYPTO_8
+UPI/REF/TASK_EARNING_REFUND_
+IMPS/P2A/INTERNAL_SETTLEMENT
+
+20. IP Address Statistics
+Missing Count: 0
+Unique Count: 149045
+First 10 examples:
+103.114.236.26, 185.90.141.148, 194.159.153.195, 185.22.55.160, 194.244.179.208, 185.28.128.142, 194.72.105.215, 185.73.221.87, 194.168.83.224, 185.196.251.168
+
+21. Device Type Statistics
+Device_Type is specified by the Problem Statement but is not present in the supplied Excel dataset.
+
+22. Summary Sheet Information
+Summary sheet present.
+
+23. Data Quality Issues
+Duplicate Transaction IDs found.
+Schema mismatch: Missing fields.
+
+24. Dataset Scale Comparison
+Required dataset scale: 2,000,000 Banking Records
+Actual supplied dataset: 149730 records
+
+25. Limitations
+This dataset scale is limited compared to the stated requirement. Some fields may be absent.
+
+26. Recommendations for Phase 2
+Proceed with Module B (Mule Ring Detection) using the actual available dataset schema.
