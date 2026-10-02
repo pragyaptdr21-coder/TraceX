@@ -1,0 +1,37 @@
+==============================================================================
+TRACEX - PRECISION / RECALL DETECTION EVALUATION REPORT
+==============================================================================
+Generated: 2026-10-02 23:04:21
+Status: OFFICIAL GROUND TRUTH NOT AVAILABLE
+
+GROUND TRUTH
+------------------------------------------------------------------------------
+  Source file            : /Users/apple/Desktop/TraceX/TraceX/evaluation/ground_truth.csv
+  Ground truth accounts  : 0
+  Mule accounts labelled : 0 (required 1500)
+  Regular accounts       : 0 (required 23500)
+  Validation issues:
+    - [GROUND_TRUTH_MISSING] evaluation/ground_truth.csv contains no label rows. The official 1,500 injected mule account IDs have not been supplied yet, so no precision or recall figure can be produced.
+
+MEASURED METRICS
+------------------------------------------------------------------------------
+  PRECISION : NOT AVAILABLE
+  RECALL    : NOT AVAILABLE
+  F1        : NOT AVAILABLE
+  FALSE POSITIVE RATE : NOT AVAILABLE
+
+REASON
+------------------------------------------------------------------------------
+  The official 1,500 injected mule account IDs are not present in the current repository.
+
+  TraceX does not substitute a proxy label set. Detector output is
+  never treated as ground truth, and no precision or recall figure
+  is produced until official labels are supplied in
+  evaluation/ground_truth.csv.
+
+  The evaluation engine is implemented and validated. It is ready to
+  run unchanged once the official labels arrive.
+
+==============================================================================
+END OF REPORT - NO METRICS CALCULATED
+==============================================================================

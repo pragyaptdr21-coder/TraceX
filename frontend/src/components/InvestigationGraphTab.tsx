@@ -1,628 +1,306 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
-import { ShieldAlert, Activity, Search, Filter, ZoomIn, ZoomOut, Maximize, Play, Pause, SkipBack, RotateCcw, Download, Crosshair, X } from 'lucide-react';
-import { getTrail, getTimeline, exportSubdataset, getAccount, getRisk, getDetections } from '../api';
+import { useState, useEffect, useCallback } from 'react';
+import ReactFlow, { Background, Controls, useNodesState, useEdgesState, MarkerType } from 'reactflow';
+import 'reactflow/dist/style.css';
+import dagre from 'dagre';
+import { ShieldAlert, Activity, X, AlertTriangle, Download, Maximize, Minimize2, Moon, Sun } from 'lucide-react';
+import { getTrail, getAccount, exportSubdataset, getRisk } from '../api';
 
-
-export default function InvestigationGraphTab({ initialAccountId }: { initialAccountId: string }) {
-  const [query, setQuery] = useState(initialAccountId);
-  const [accountId, setAccountId] = useState(initialAccountId);
-  const [isolatedNodeId, setIsolatedNodeId] = useState<string | null>(null);
+export default function InvestigationGraphTab({ initialAccountId, fullscreen, initialHops = 3 }: { initialAccountId: string, fullscreen?: boolean, initialHops?: number }) {
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   
-  const [hops, setHops] = useState(4);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const [fullGraphData, setFullGraphData] = useState({ nodes: [], edges: [], root_account: '' });
-  const [graphData, setGraphData] = useState({ nodes: [], edges: [], root_account: '' });
-
-  
-  // Timeline State
-  const [startTime, setStartTime] = useState<number | null>(null);
-  const [endTime, setEndTime] = useState<number | null>(null);
-  const [currentTime, setCurrentTime] = useState<number | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  
-  // Evidence & UI State
-  const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [selectedNodeProfile, setSelectedNodeProfile] = useState<any>(null);
-  const [isLoadingNodeProfile, setIsLoadingNodeProfile] = useState(false);
-  const [selectedEdge, setSelectedEdge] = useState<any>(null);
-  const [evidencePanelOpen, setEvidencePanelOpen] = useState(false);
-  const [evidence, setEvidence] = useState<any[]>([]);
-  const [graphSize, setGraphSize] = useState({ width: 900, height: 420 });
-
-  const graphRef = useRef<any>(null);
-  const graphViewportRef = useRef<HTMLDivElement>(null);
-  const playIntervalRef = useRef<any>(null);
+  const [isFullscreen, setIsFullscreen] = useState(fullscreen || false);
+  const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
-    const viewport = graphViewportRef.current;
-    if (!viewport) return;
-    const updateSize = () => setGraphSize({
-      width: Math.max(320, viewport.clientWidth),
-      height: Math.max(280, viewport.clientHeight),
-    });
-    updateSize();
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(viewport);
-    return () => observer.disconnect();
+    const handler = () => setIsDarkMode(document.documentElement.classList.contains('dark'));
+    window.addEventListener('theme-change', handler);
+    return () => window.removeEventListener('theme-change', handler);
   }, []);
+  const [hops, setHops] = useState(initialHops);
+  const [query, setQuery] = useState(initialAccountId);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  
+  const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [nodeProfile, setNodeProfile] = useState<any>(null);
 
-  const loadGraph = useCallback(async (targetAccount: string, targetHops: number) => {
-    if (!targetAccount) return;
+  const loadGraph = useCallback(async (accountId: string) => {
     setIsLoading(true);
-    setError(null);
+    setError('');
     setSelectedNode(null);
-    setSelectedNodeProfile(null);
-    setSelectedEdge(null);
-    setIsPlaying(false);
-    
+    setNodeProfile(null);
     try {
-      const [trailRes, timelineRes] = await Promise.all([
-        getTrail(targetAccount, targetHops),
-        getTimeline(targetAccount).catch(() => [])
-      ]);
+      const data = await getTrail(accountId, hops);
+      if (!data || !data.nodes || data.nodes.length === 0) {
+        throw new Error('No connections found for this account.');
+      }
       
-      if (!trailRes || trailRes.nodes.length === 0) {
-        setError("No downstream trail found.");
-        setFullGraphData({ nodes: [], edges: [], root_account: targetAccount });
-        setGraphData({ nodes: [], edges: [], root_account: targetAccount });
-      } else {
-        setFullGraphData(trailRes);
+      // Dagre layout
+      const dagreGraph = new dagre.graphlib.Graph();
+      dagreGraph.setDefaultEdgeLabel(() => ({}));
+      dagreGraph.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 350 }); // Left-to-Right with huge spacing to fix congestion
+      
+      data.nodes.forEach((n: any) => {
+        dagreGraph.setNode(n.id, { width: 220, height: 80 });
+      });
+      data.edges.forEach((e: any) => {
+        dagreGraph.setEdge(e.source.id || e.source, e.target.id || e.target);
+      });
+      dagre.layout(dagreGraph);
+
+      const formattedNodes = data.nodes.map((n: any) => {
+        const nodeWithPosition = dagreGraph.node(n.id);
         
-        let start = null;
-        let end = null;
-        if (timelineRes && timelineRes.length > 0) {
-           const firstTx = new Date(timelineRes[0].Timestamp).getTime();
-           const lastTx = new Date(timelineRes[timelineRes.length - 1].Timestamp).getTime();
-           const edgeTimes = trailRes.edges.map((e: any) => new Date(e.timestamp).getTime());
-           
-           start = Math.min(firstTx, ...edgeTimes);
-           end = Math.max(lastTx, ...edgeTimes);
-           
-           setStartTime(start);
-           setEndTime(end);
-           setCurrentTime(end);
-        } else {
-           setStartTime(null);
-           setEndTime(null);
-           setCurrentTime(null);
-        }
-        setGraphData(trailRes);
-      }
+        let color = isDarkMode ? '#38bdf8' : '#64748b';
+        let label = 'Account';
+        let bg = isDarkMode ? 'bg-slate-900/80' : 'bg-slate-50';
+        let textC = isDarkMode ? 'text-cyan-400' : 'text-slate-600';
+        let borderC = isDarkMode ? 'border-cyan-900/50' : 'border-slate-200';
+        let glow = isDarkMode ? '0 0 10px 1px rgba(56, 189, 248, 0.2)' : '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)';
+        
+        if (n.role === 'victim') { color = isDarkMode ? '#0ea5e9' : '#3b82f6'; label = 'Victim (Start)'; bg = isDarkMode ? 'bg-sky-950' : 'bg-blue-100'; textC = isDarkMode ? 'text-sky-300' : 'text-blue-700'; borderC = isDarkMode ? 'border-sky-500' : 'border-blue-300'; glow = isDarkMode ? '0 0 25px 5px rgba(14, 165, 233, 0.6)' : '0 0 20px 2px rgba(59, 130, 246, 0.5)'; }
+        if (n.role === 'terminal') { color = '#f59e0b'; label = 'Cash-Out'; bg = isDarkMode ? 'bg-amber-950' : 'bg-amber-50'; textC = isDarkMode ? 'text-amber-400' : 'text-amber-600'; borderC = isDarkMode ? 'border-amber-600' : 'border-amber-200'; glow = isDarkMode ? '0 0 15px 2px rgba(245, 158, 11, 0.4)' : glow; }
+        if (n.role === 'mule') { color = '#ef4444'; label = 'Mule'; bg = isDarkMode ? 'bg-red-950' : 'bg-red-50'; textC = isDarkMode ? 'text-red-400' : 'text-red-600'; borderC = isDarkMode ? 'border-red-600' : 'border-red-200'; glow = isDarkMode ? '0 0 15px 2px rgba(239, 68, 68, 0.4)' : glow; }
+        if (n.role === 'distributor') { color = '#8b5cf6'; label = 'Distributor'; bg = isDarkMode ? 'bg-purple-950' : 'bg-purple-50'; textC = isDarkMode ? 'text-purple-400' : 'text-purple-600'; borderC = isDarkMode ? 'border-purple-600' : 'border-purple-200'; glow = isDarkMode ? '0 0 15px 2px rgba(139, 92, 246, 0.4)' : glow; }
+
+        return {
+          id: n.id,
+          position: { x: nodeWithPosition.x - 110, y: nodeWithPosition.y - 40 },
+          data: { 
+            raw: n,
+            label: (
+              <div className="text-left relative w-full">
+                {n.role === 'victim' && (
+                  <div className="absolute -top-6 -left-3 bg-blue-600 text-white px-2 py-0.5 rounded shadow-lg animate-pulse text-[10px] font-black uppercase border border-blue-400 z-10 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-white rounded-full"></span> START
+                  </div>
+                )}
+                <div className="flex justify-between items-center mb-2">
+                  <div className="font-semibold text-sm ${isDarkMode ? 'text-white' : 'text-slate-800'} truncate pr-2" title={n.id}>{n.id.length > 12 ? n.id.slice(0, 10) + '...' : n.id}</div>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${bg} ${textC} ${borderC}`}>{label}</span>
+                </div>
+                <div className="text-[10px] text-slate-500 font-medium px-2 py-1 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-500'} rounded border flex justify-between">
+                  <span>Hop: {n.layer}</span>
+                  <span>Risk: {Math.round(n.intensity * 100)}</span>
+                </div>
+              </div>
+            )
+          },
+          style: {
+            background: isDarkMode ? '#020617' : 'white',
+            color: isDarkMode ? '#f8fafc' : '#020617',
+            border: n.role === 'victim' ? `3px solid ${color}` : `2px solid ${color}`,
+            padding: '12px',
+            borderRadius: '8px',
+            width: n.role === 'victim' ? 220 : 200,
+            boxShadow: glow
+          }
+        };
+      });
+
+      const formattedEdges = data.edges.map((e: any) => {
+        const amt = e.amount ? `₹${e.amount.toLocaleString()}` : 'Transfer';
+        return {
+          id: `${e.source.id || e.source}-${e.target.id || e.target}-${e.transaction_id || Math.random()}`,
+          source: e.source.id || e.source,
+          target: e.target.id || e.target,
+          animated: true,
+          type: 'smoothstep',
+          label: amt,
+          labelStyle: { fill: isDarkMode ? '#f8fafc' : '#0f172a', fontWeight: 600, fontSize: 10 },
+          labelBgStyle: { fill: isDarkMode ? '#020617' : '#f8fafc', fillOpacity: 0.9, stroke: isDarkMode ? '#475569' : '#cbd5e1', strokeWidth: 1, rx: 4, ry: 4 },
+          style: { stroke: '#94a3b8', strokeWidth: 1.5 },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
+          data: { raw: e }
+        };
+      });
+
+      setNodes(formattedNodes);
+      setEdges(formattedEdges);
     } catch (err: any) {
-      if (err.response?.status === 404) {
-        setError("Account not found.");
-      } else {
-        setError("TraceX backend is unavailable or unable to load investigation trail.");
-      }
-      setFullGraphData({ nodes: [], edges: [], root_account: targetAccount });
-      setGraphData({ nodes: [], edges: [], root_account: targetAccount });
+      setError(err.message || 'Failed to load graph.');
     } finally {
       setIsLoading(false);
     }
+  }, [hops, setNodes, setEdges, isDarkMode]);
+
+  useEffect(() => {
+    loadGraph(initialAccountId);
+  }, [initialAccountId, loadGraph]);
+
+  const handleSearch = () => { if (query.trim()) loadGraph(query.trim()); };
+
+  const onNodeClick = useCallback(async (_: any, node: any) => {
+    setSelectedNode(node);
+    setNodeProfile(null);
+    try {
+      const p = await getAccount(node.id);
+      let risk = null;
+      try { risk = await getRisk(node.id); } catch(err) {}
+      setNodeProfile({ summary: p, risk });
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
 
-  useEffect(() => {
-    if (accountId) {
-      loadGraph(accountId, hops);
-    }
-  }, [accountId, hops, loadGraph]);
-
-  useEffect(() => {
-    if (currentTime !== null && fullGraphData.nodes.length > 0) {
-         let visibleEdges = fullGraphData.edges.filter((e: any) => {
-           const eTime = new Date(e.timestamp).getTime();
-           return eTime <= currentTime;
-       });
-
-         if (isolatedNodeId) {
-           const isolatedAccounts = new Set([isolatedNodeId]);
-           let changed = true;
-           while (changed) {
-             changed = false;
-             visibleEdges.forEach((edge: any) => {
-               const source = edge.source.id || edge.source;
-               const target = edge.target.id || edge.target;
-               if (isolatedAccounts.has(source) && !isolatedAccounts.has(target)) {
-                 isolatedAccounts.add(target);
-                 changed = true;
-               }
-             });
-           }
-           visibleEdges = visibleEdges.filter((edge: any) => isolatedAccounts.has(edge.source.id || edge.source) && isolatedAccounts.has(edge.target.id || edge.target));
-         }
-       
-       const visibleNodes = fullGraphData.nodes.filter((n: any) => {
-           if (n.id === fullGraphData.root_account) return true;
-           return visibleEdges.some((e: any) => e.source === n.id || e.target === n.id || e.source.id === n.id || e.target.id === n.id);
-       });
-
-       setGraphData({
-           nodes: visibleNodes,
-           edges: visibleEdges,
-           root_account: fullGraphData.root_account
-       });
-       
-       if (selectedEdge) {
-           if (!visibleEdges.find((e: any) => e.transaction_id === selectedEdge.transaction_id)) {
-               setSelectedEdge(null);
-           }
-       }
-       if (selectedNode) {
-           if (!visibleNodes.find((n: any) => n.id === selectedNode.id)) {
-               setSelectedNode(null);
-           }
-       }
-    }
-  }, [currentTime, fullGraphData, isolatedNodeId]);
-
-  useEffect(() => {
-    if (isPlaying && startTime !== null && endTime !== null && currentTime !== null) {
-      const tickRate = 200;
-      const minuteMs = 60 * 1000;
-      
-      playIntervalRef.current = setInterval(() => {
-        setCurrentTime(prev => {
-          if (prev === null) return null;
-          const nextTime = prev + (minuteMs * playbackSpeed * 10);
-          if (nextTime >= endTime) {
-            setIsPlaying(false);
-            return endTime;
-          }
-          return nextTime;
-        });
-      }, tickRate);
-    } else {
-      clearInterval(playIntervalRef.current);
-    }
-    
-    return () => clearInterval(playIntervalRef.current);
-  }, [isPlaying, startTime, endTime, playbackSpeed]);
-
-  const handleSearch = () => {
-    if (query.trim()) {
-      setAccountId(query);
-      setIsolatedNodeId(null);
-    }
-  };
-
-  const handleIsolate = () => {
-    if (selectedNode && selectedNode.id !== accountId) {
-      setIsolatedNodeId(selectedNode.id);
-    }
-  };
-
-  const handleExitIsolation = () => {
-    setIsolatedNodeId(null);
-  };
-
-  const handleResetGraph = () => {
-    setIsolatedNodeId(null);
-    setQuery(accountId);
-    loadGraph(accountId, hops);
-  };
-
   const handleExport = async () => {
-    if (graphData.edges.length === 0) return;
     try {
-      const txIds = graphData.edges.map((e: any) => e.transaction_id);
-      const metadata = {
-        source_account: accountId,
-        hop_scope: hops,
-        timeline_start: startTime ? new Date(startTime).toISOString() : 'N/A',
-        timeline_end: currentTime ? new Date(currentTime).toISOString() : 'N/A',
-        transaction_count: txIds.length,
-        account_count: graphData.nodes.length,
-        generated_at: new Date().toISOString()
-      };
-      
-      const blob = await exportSubdataset(txIds, metadata);
-      const url = window.URL.createObjectURL(blob);
+      const transactionIds = edges.map((e: any) => e.data?.raw?.Transaction_ID || e.data?.raw?.transaction_id).filter(Boolean);
+      const data = await exportSubdataset(transactionIds, { hops, query });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `investigation_export_${accountId}.csv`;
-      document.body.appendChild(a);
+      a.download = `tracex_export_${query}.json`;
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
     } catch (e) {
-      alert("Unable to generate investigation export. Backend unavailable.");
+      console.error(e);
     }
   };
-
-  const addEvidence = (item: any, type: string) => {
-    const exists = evidence.find(e => e.id === item.id || e.transaction_id === item.transaction_id);
-    if (!exists) {
-      setEvidence(prev => [...prev, { ...item, type }]);
-      setEvidencePanelOpen(true);
-    }
-  };
-
-  const handleNodeSelect = async (node: any) => {
-    setSelectedNode(node);
-    setSelectedEdge(null);
-    setSelectedNodeProfile(null);
-    setIsLoadingNodeProfile(true);
-    try {
-      const [summary, risk, detections] = await Promise.all([
-        getAccount(node.id),
-        getRisk(node.id).catch(() => null),
-        getDetections(node.id).catch(() => [])
-      ]);
-      setSelectedNodeProfile({ summary, risk, detections });
-    } finally {
-      setIsLoadingNodeProfile(false);
-    }
-  };
-
-  const handleZoomIn = () => { if (graphRef.current) graphRef.current.zoom(graphRef.current.zoom() * 1.5, 400); };
-  const handleZoomOut = () => { if (graphRef.current) graphRef.current.zoom(graphRef.current.zoom() / 1.5, 400); };
-  const handleFit = () => { if (graphRef.current) graphRef.current.zoomToFit(400); };
-
-  const drawGraphNode = (node: any, context: CanvasRenderingContext2D, globalScale: number) => {
-    if (node.x === undefined || node.y === undefined) return;
-    const isRoot = node.id === graphData.root_account;
-    const isLayerOne = node.layer === 1;
-    const nodeColor = isRoot ? '#2563eb' : isLayerOne ? '#e87979' : '#9aaabd';
-
-    // Dense real trails stay readable as compact nodes at overview zoom.
-    // Account cards appear when the investigator zooms into a local subgraph.
-    const useCardLayout = graphData.nodes.length <= 80;
-    if (!useCardLayout && globalScale < 0.85 && !isRoot) {
-      context.save();
-      context.beginPath();
-      context.arc(node.x, node.y, 4.5, 0, Math.PI * 2);
-      context.fillStyle = nodeColor;
-      context.fill();
-      context.restore();
-      return;
-    }
-
-    const width = isRoot ? 142 : 118;
-    const height = 42;
-    const left = node.x - width / 2;
-    const top = node.y - height / 2;
-    const radius = 5;
-
-    context.save();
-    context.beginPath();
-    context.roundRect(left, top, width, height, radius);
-    context.fillStyle = '#ffffff';
-    context.fill();
-    context.lineWidth = isRoot ? 2 : 1.5;
-    context.strokeStyle = isRoot ? '#4f8be8' : isLayerOne ? '#e87979' : '#b8c4d4';
-    context.stroke();
-
-    if (globalScale > 0.55) {
-      context.fillStyle = '#253449';
-      context.font = `${Math.max(7, 10 / globalScale)}px ui-sans-serif, sans-serif`;
-      context.textAlign = 'left';
-      context.textBaseline = 'middle';
-      const label = String(node.id);
-      context.fillText(label.length > 18 ? `${label.slice(0, 17)}...` : label, left + 9, top + 15);
-      context.fillStyle = '#8c99aa';
-      context.font = `${Math.max(6, 8 / globalScale)}px ui-sans-serif, sans-serif`;
-      context.fillText(isRoot ? 'Source account' : `Hop ${node.layer} trail node`, left + 9, top + 30);
-    }
-    context.restore();
-  };
-
-  const drawGraphLink = (link: any, context: CanvasRenderingContext2D, globalScale: number) => {
-    const source = link.source;
-    const target = link.target;
-    if (!source?.x || !target?.x) return;
-    const text = `₹${Number(link.amount || 0).toLocaleString('en-IN')}`;
-    const midX = (source.x + target.x) / 2;
-    const midY = (source.y + target.y) / 2;
-    context.save();
-    context.fillStyle = '#e56f73';
-    context.font = `${Math.max(7, 9 / globalScale)}px ui-sans-serif, sans-serif`;
-    context.textAlign = 'center';
-    context.textBaseline = 'bottom';
-    if (graphData.nodes.length <= 80 || globalScale > 1.05) context.fillText(text, midX, midY - 3);
-    context.restore();
-  };
-
-  const formatTime = (ts: number | null) => {
-    if (!ts) return "--";
-    const d = new Date(ts);
-    return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
-
-  const timelinePercent = (startTime && endTime && currentTime) 
-    ? Math.min(100, Math.max(0, ((currentTime - startTime) / (endTime - startTime)) * 100))
-    : 100;
 
   return (
-    <div className="graph-workspace flex flex-col bg-white text-[#4b586b] relative rounded-md overflow-hidden border border-[#e1e7ef]">
-      <div className="bg-white border-b border-[#e1e7ef] p-4 shadow-sm z-10 shrink-0">
-        <div className="graph-header-actions flex items-center justify-between mb-4">
-          <div>
-            <div className="graph-breadcrumb">Topology Engine / Entity Graph</div>
-            <h2 className="text-xl font-bold flex items-center gap-3 text-[#1c2738]">
-              Investigation Graph & Timeline
-              {isolatedNodeId && (
-                <span className="bg-[#e53e3e] text-white text-[10px] uppercase px-2 py-1 rounded shadow-sm">Isolated Mode</span>
-              )}
-            </h2>
+    <div className={`flex flex-col ${isDarkMode ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-800'} ${isFullscreen ? 'fixed inset-0 z-50 p-6' : 'h-full'}`}>
+      
+      {/* HEADER */}
+      <div className="border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-200'} pb-4 mb-4 shrink-0 flex flex-wrap gap-4 justify-between items-end">
+        <div>
+          <div className="text-xs font-semibold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'} mb-1">Topology Engine / Entity Graph</div>
+          <h2 className="text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'} flex items-center gap-3">
+             Investigation Graph
+             {isLoading && <Activity size={18} className="text-blue-500 animate-spin" />}
+          </h2>
+        </div>
+        
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} rounded shadow-sm">
+            <input 
+              type="text" 
+              className="px-3 py-1.5 text-sm outline-none w-48 rounded-l" 
+              placeholder="Source Account..." 
+              value={query} 
+              onChange={e => setQuery(e.target.value)} 
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            />
+            <div className="border-l ${isDarkMode ? 'border-slate-700 bg-slate-950/50' : 'border-slate-200 bg-slate-50'} px-2 flex items-center">
+              <span className="text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} mr-2">HOPS</span>
+              <select value={hops} onChange={e => setHops(Number(e.target.value))} className="text-sm bg-transparent outline-none font-medium">
+                <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
+              </select>
+            </div>
+            <button onClick={handleSearch} className="px-3 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded-r hover:bg-blue-700">Load</button>
+          </div>
+
+          <div className="${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} px-4 py-1.5 rounded shadow-sm text-sm flex items-center space-x-6">
+            <div><span className="text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} block">Entities</span><span className="font-semibold ${isDarkMode ? 'text-white' : 'text-slate-800'}">{nodes.length}</span></div>
+            <div><span className="text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} block">Links</span><span className="font-semibold ${isDarkMode ? 'text-white' : 'text-slate-800'}">{edges.length}</span></div>
           </div>
           
-          {fullGraphData.nodes.length > 0 && (
-            <div className="graph-action-buttons flex gap-2">
-              <div className="graph-stat"><span>Entities</span><strong>{graphData.nodes.length}</strong></div>
-              <div className="graph-stat"><span>Links</span><strong>{graphData.edges.length}</strong></div>
-              {isolatedNodeId && (
-                <button onClick={handleExitIsolation} className="px-3 py-1.5 bg-gray-50 border border-border text-xs font-bold rounded shadow-sm hover:bg-gray-100 flex items-center gap-2">
-                   <X size={14} /> Exit Isolation
-                </button>
-              )}
-              <button onClick={() => setEvidencePanelOpen(!evidencePanelOpen)} className="px-3 py-1.5 bg-gray-50 border border-border text-xs font-bold rounded shadow-sm hover:bg-gray-100">
-                 Selected Evidence ({evidence.length})
-              </button>
-              <button onClick={handleExport} className="px-3 py-1.5 bg-primary text-white border border-primary text-xs font-bold rounded shadow-sm hover:bg-primary/90 flex items-center gap-2">
-                 <Download size={14} /> Export Subdataset
-              </button>
-                <button onClick={handleResetGraph} className="px-3 py-1.5 bg-gray-50 border border-border text-xs font-bold rounded shadow-sm hover:bg-gray-100 flex items-center gap-2" title="Reset graph view">
-                  <RotateCcw size={14} /> Reset Graph
-                </button>
+          <button onClick={() => setIsDarkMode(!isDarkMode)} className={`px-4 py-2 font-bold uppercase tracking-wider text-xs flex items-center gap-2 ${isDarkMode ? 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-500 shadow-[0_0_10px_rgba(79,70,229,0.5)]' : 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800'} border rounded`} title="Toggle Theme">
+            {isDarkMode ? <><Sun size={16} className="text-amber-300" /> Light Mode</> : <><Moon size={16} className="text-indigo-300" /> Cyber Mode</>}
+          </button>
+          
+          <button onClick={handleExport} className="p-2 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} rounded shadow-sm hover:bg-slate-100" title="Export Dataset"><Download size={18} className="${isDarkMode ? 'text-slate-300' : 'text-slate-600'}" /></button>
+          
+          <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} rounded shadow-sm hover:bg-slate-100" title="Toggle Fullscreen">
+            {isFullscreen ? <Minimize2 size={18} className="${isDarkMode ? 'text-slate-300' : 'text-slate-600'}" /> : <Maximize size={18} className="${isDarkMode ? 'text-slate-300' : 'text-slate-600'}" />}
+          </button>
+          
+          {error && (
+            <div className="bg-red-50 text-red-700 border border-red-200 px-3 py-1.5 rounded shadow-sm text-sm flex items-center gap-2">
+               <ShieldAlert size={14} /> <span className="font-semibold">{error}</span>
             </div>
           )}
         </div>
-
-        <div className="graph-header-controls flex items-center gap-4">
-          <div className="relative w-64">
-             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-             <input 
-              type="text" 
-              className="w-full bg-gray-50 border border-border rounded-md pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-sm"
-              placeholder="Source Account ID..."
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          <button onClick={handleSearch} className="px-4 py-1.5 bg-primary text-white text-xs font-semibold rounded shadow-sm border border-primary hover:bg-primary/90">
-            Load Graph
-          </button>
-          <div className="h-6 w-px bg-border mx-2"></div>
-          <div className="flex items-center gap-2">
-            <Filter size={14} className="text-text-muted" />
-            <span className="text-xs font-bold text-text-muted">HOP LIMIT:</span>
-            <select value={hops} onChange={e => setHops(Number(e.target.value))} className="bg-gray-50 border border-border text-xs rounded px-2 py-1 shadow-sm font-medium">
-              <option value={1}>1 Hop</option>
-              <option value={2}>2 Hops</option>
-              <option value={3}>3 Hops</option>
-              <option value={4}>4 Hops</option>
-            </select>
-          </div>
-          <div className="h-6 w-px bg-border mx-2"></div>
-          <div className="flex items-center gap-2">
-            <button onClick={handleZoomIn} aria-label="Zoom in" title="Zoom in" className="p-1.5 bg-gray-50 border border-border rounded shadow-sm"><ZoomIn size={14} /></button>
-            <button onClick={handleZoomOut} aria-label="Zoom out" title="Zoom out" className="p-1.5 bg-gray-50 border border-border rounded shadow-sm"><ZoomOut size={14} /></button>
-            <button onClick={handleFit} aria-label="Fit graph" title="Fit graph" className="p-1.5 bg-gray-50 border border-border rounded shadow-sm"><Maximize size={14} /></button>
-          </div>
-          <div className="h-6 w-px bg-border mx-2"></div>
-          <div className="flex gap-4">
-            <div className="flex items-center gap-1.5 text-xs font-bold"><span className="text-[10px] text-text-muted uppercase">Nodes:</span> {graphData.nodes.length}</div>
-            <div className="flex items-center gap-1.5 text-xs font-bold"><span className="text-[10px] text-text-muted uppercase">Edges:</span> {graphData.edges.length}</div>
-          </div>
-        </div>
       </div>
 
-      <div className="flex-1 relative overflow-hidden bg-[#f8fafc] min-h-0">
-        <div ref={graphViewportRef} className={`graph-canvas-area ${startTime && endTime ? 'has-timeline' : ''}`}>
-        {isLoading && (
-          <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
-            <Activity size={32} className="text-primary animate-spin mb-4" />
-            <div className="text-sm font-bold text-primary">Building investigation trail...</div>
-          </div>
-        )}
-        
-        {error && !isLoading && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center">
-            <div className="bg-danger-light border border-danger/20 text-danger p-4 rounded-lg flex items-center gap-3 text-sm font-semibold shadow-sm">
-              <ShieldAlert size={18} />
-              {error}
-            </div>
-          </div>
-        )}
-
-        {!isLoading && graphData.nodes.length > 0 && (
-          <ForceGraph2D
-            ref={graphRef}
-            graphData={{
-              nodes: graphData.nodes.map((n: any) => ({ ...n, name: n.id })),
-              links: graphData.edges.map((e: any) => ({ ...e, source: e.source.id || e.source, target: e.target.id || e.target }))
-            }}
-            nodeLabel="name"
-            nodeCanvasObject={drawGraphNode}
-            nodePointerAreaPaint={(node: any, color: string, context: CanvasRenderingContext2D) => {
-              if (node.x === undefined || node.y === undefined) return;
-              context.fillStyle = color;
-              context.fillRect(node.x - 60, node.y - 22, 120, 44);
-            }}
-            nodeColor={(node: any) => node.id === graphData.root_account ? '#2563eb' : (node.layer === 1 ? '#0ea5e9' : '#94a3b8')}
-            nodeRelSize={6}
-            dagMode={graphData.nodes.length <= 80 ? 'lr' : undefined}
-            dagLevelDistance={graphData.nodes.length <= 80 ? 180 : undefined}
-            d3VelocityDecay={0.35}
-            linkColor={() => '#e56f73'}
-            linkLineDash={() => [5, 4]}
-            linkCurvature={graphData.nodes.length <= 80 ? 0.12 : 0}
-            linkDirectionalArrowLength={3.5}
-            linkDirectionalArrowRelPos={1}
-            linkDirectionalParticles={graphData.nodes.length <= 80 ? 2 : 0}
-            linkDirectionalParticleWidth={2.5}
-            linkDirectionalParticleSpeed={0.006}
-            linkCanvasObject={drawGraphLink}
-            onEngineStop={() => graphRef.current?.zoomToFit(500, 55)}
-            onNodeClick={(node) => {
-              void handleNodeSelect(node);
-              if (graphRef.current) {
-                graphRef.current.centerAt(node.x, node.y, 400);
-                graphRef.current.zoom(2, 400);
-              }
-            }}
-            onLinkClick={(link) => {
-              setSelectedEdge(link);
-              setSelectedNode(null);
-            }}
-            width={graphSize.width}
-            height={graphSize.height}
-          />
-        )}
+      {/* GRAPH WORKSPACE */}
+      <div className="flex-1 flex space-x-4 min-h-0 relative">
+        <div className="flex-1 border ${isDarkMode ? 'border-slate-700 bg-slate-950' : 'border-slate-200 bg-white'} rounded-lg overflow-hidden relative shadow-inner">
+          <ReactFlow 
+            nodes={nodes} 
+            edges={edges} 
+            onNodesChange={onNodesChange} 
+            onEdgesChange={onEdgesChange}
+            onNodeClick={onNodeClick}
+            fitView
+            attributionPosition="bottom-left"
+            panOnScroll={true}
+            panOnDrag={true}
+            zoomOnScroll={false}
+            zoomOnPinch={true}
+            nodesDraggable={true}
+          >
+            <Background color={isDarkMode ? '#1e293b' : '#cbd5e1'} gap={24} size={2} />
+            <Controls className="${isDarkMode ? 'bg-slate-900 fill-slate-300 border-slate-700' : 'bg-white fill-slate-700 border-slate-200'} shadow-sm" showInteractive={false} />
+          </ReactFlow>
         </div>
 
-        <div className="absolute bottom-[100px] left-4 bg-white/90 backdrop-blur border border-border p-3 rounded-lg shadow-sm z-10 pointer-events-none">
-          <div className="text-[10px] font-bold text-text-muted uppercase mb-2">Legend</div>
-          <div className="space-y-1.5 text-xs">
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#2563eb]"></div> Source Account</div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#0ea5e9]"></div> Hop 1 Account</div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#94a3b8]"></div> Hop 2+ Account</div>
-            <div className="flex items-center gap-2"><div className="w-4 h-0.5 bg-[#cbd5e1]"></div> Transaction Edge</div>
-          </div>
-        </div>
-
-        {(selectedNode || selectedEdge) && (
-          <div className="absolute top-4 right-4 w-[min(320px,calc(100%-2rem))] bg-white/95 backdrop-blur border border-border rounded-lg shadow-lg z-10 flex flex-col max-h-[calc(100%-2rem)]">
-            <div className="p-3 border-b border-border flex justify-between items-center bg-gray-50 rounded-t-lg">
-              <span className="text-xs font-bold text-text-main uppercase tracking-wider">
-                {selectedNode ? 'Node Intelligence' : 'Transaction Intelligence'}
-              </span>
-              <button onClick={() => { setSelectedNode(null); setSelectedEdge(null); }} className="text-text-muted hover:text-text-main font-bold">×</button>
+        {/* SIDE PANEL */}
+        {selectedNode && (
+          <div className="absolute right-4 top-4 bottom-4 w-[400px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} rounded-lg shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right-8 z-10">
+            <div className="${isDarkMode ? 'bg-slate-950/50 border-slate-700' : 'bg-slate-50 border-slate-200'} border-b p-4 flex justify-between items-start">
+              <div>
+                <div className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded border border-blue-200 inline-block mb-2 uppercase tracking-wider">Entity Profile</div>
+                <h3 className="text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'} font-mono break-all">{selectedNode.id}</h3>
+              </div>
+              <div className="flex space-x-1 text-slate-400">
+                <button className="p-1.5 ${isDarkMode ? 'hover:bg-slate-800 hover:text-white' : 'hover:bg-slate-200 hover:text-slate-700'} rounded transition-colors" onClick={() => setSelectedNode(null)}><X className="w-4 h-4" /></button>
+              </div>
             </div>
             
-            <div className="p-4 overflow-y-auto flex-1 text-sm space-y-4">
-              {selectedNode && (
-                <>
-                  <div className="flex justify-between items-start">
-                     <div>
-                        <div className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Account ID</div>
-                        <div className="font-mono text-text-main font-bold mt-1 break-all">{selectedNode.id}</div>
-                     </div>
-                     {selectedNode.id !== graphData.root_account && (
-                        <button onClick={handleIsolate} className="p-1.5 bg-gray-50 border border-border rounded hover:bg-gray-100" title="Isolate Subgraph"><Crosshair size={14} /></button>
-                     )}
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Classification</div>
+                  <div className="text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'} capitalize">{selectedNode.data.raw.role}</div>
+                </div>
+                {selectedNode.data.raw.role !== 'victim' && (
+                  <div className="text-center ${isDarkMode ? 'bg-red-900/20 border-red-800/50' : 'bg-red-50 border-red-200'} rounded p-2">
+                    <div className="text-[10px] font-bold ${isDarkMode ? 'text-red-400' : 'text-red-600'} mb-1 uppercase">Risk Score</div>
+                    <div className="text-xl font-bold text-red-700">{Math.round((nodeProfile?.risk?.mule_risk_index || selectedNode.data.raw.intensity * 100))}/100</div>
                   </div>
-                  <div>
-                    <div className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Hop Distance</div>
-                    <div className="text-text-main font-bold">{selectedNode.layer}</div>
-                  </div>
-                  <div className="p-3 bg-blue-50 border border-blue-100 rounded-md text-xs text-blue-900 leading-relaxed">
-                    {isLoadingNodeProfile && 'Loading real account context...'}
-                    {!isLoadingNodeProfile && selectedNodeProfile && (
-                      <>
-                        <div className="font-bold mb-1">Why this node is shown</div>
-                        <div>{selectedNode.id === graphData.root_account
-                          ? 'This is the source account selected for the investigation.'
-                          : `This account is connected through the backend trail at hop ${selectedNode.layer}. The graph includes it because a real outgoing transaction links it to the investigated flow.`}</div>
-                        <div className="mt-2 text-[11px]">{selectedNodeProfile.summary.incoming_count} incoming, {selectedNodeProfile.summary.outgoing_count} outgoing transactions and {selectedNodeProfile.summary.unique_counterparties} unique counterparties.</div>
-                        {selectedNodeProfile.risk && selectedNodeProfile.risk.signals.length > 0 && (
-                          <div className="mt-2"><strong>Detected signals:</strong> {selectedNodeProfile.risk.signals.map((signal: any) => signal.type).join(', ')}.</div>
-                        )}
-                        {selectedNodeProfile.detections.length === 0 && <div className="mt-2">No detector output is available for this account.</div>}
-                      </>
-                    )}
-                  </div>
-                  <button onClick={() => addEvidence(selectedNode, 'Account')} className="w-full px-3 py-1.5 bg-gray-50 border border-border text-xs font-bold rounded shadow-sm hover:bg-gray-100">Add to Evidence</button>
-                </>
-              )}
-
-              {selectedEdge && (
-                <>
-                  <div>
-                    <div className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Transaction ID</div>
-                    <div className="font-mono text-text-main font-bold mt-1 break-all">{selectedEdge.transaction_id || 'N/A'}</div>
-                  </div>
-                  <div className="p-3 bg-gray-50 border border-border rounded-md">
-                    <div className="text-[10px] text-text-muted font-bold uppercase tracking-wider mb-1">Flow Direction</div>
-                    <div className="flex flex-col gap-2">
-                      <div className="font-mono text-xs font-bold text-text-main truncate">{selectedEdge.source.id || selectedEdge.source}</div>
-                      <div className="flex justify-center"><div className="w-px h-4 bg-border relative"><div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 border-r-2 border-b-2 border-border rotate-45"></div></div></div>
-                      <div className="font-mono text-xs font-bold text-primary truncate">{selectedEdge.target.id || selectedEdge.target}</div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><div className="text-[10px] text-text-muted font-bold uppercase">Amount</div><div className="font-bold">₹{(selectedEdge.amount || 0).toLocaleString()}</div></div>
-                    <div><div className="text-[10px] text-text-muted font-bold uppercase">Timestamp</div><div className="font-bold text-xs">{selectedEdge.timestamp || 'N/A'}</div></div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div><div className="text-[10px] text-text-muted font-bold uppercase">Sender IFSC</div><div className="font-mono font-bold">{selectedEdge.sender_ifsc || 'Not available'}</div></div>
-                    <div><div className="text-[10px] text-text-muted font-bold uppercase">Receiver IFSC</div><div className="font-mono font-bold">{selectedEdge.receiver_ifsc || 'Not available'}</div></div>
-                  </div>
-                  <button onClick={() => addEvidence(selectedEdge, 'Transaction')} className="w-full px-3 py-1.5 bg-gray-50 border border-border text-xs font-bold rounded shadow-sm hover:bg-gray-100">Add to Evidence</button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Evidence Panel */}
-        {evidencePanelOpen && (
-          <div className="absolute top-4 right-[min(340px,calc(100%-2rem))] w-[min(320px,calc(100%-2rem))] bg-white/95 backdrop-blur border border-border rounded-lg shadow-lg z-10 flex flex-col max-h-[calc(100%-2rem)]">
-            <div className="p-3 border-b border-border flex justify-between items-center bg-gray-50 rounded-t-lg">
-              <span className="text-xs font-bold text-text-main uppercase tracking-wider">Selected Evidence</span>
-              <button onClick={() => setEvidencePanelOpen(false)} className="text-text-muted hover:text-text-main font-bold">×</button>
-            </div>
-            <div className="p-4 overflow-y-auto flex-1 text-sm space-y-3">
-              {evidence.length === 0 ? (
-                <div className="text-center py-4 text-xs text-text-muted border-2 border-dashed border-border rounded-lg">No evidence selected.</div>
-              ) : (
-                evidence.map((ev, i) => (
-                  <div key={i} className="p-3 bg-gray-50 border border-border rounded-md relative group">
-                     <button onClick={() => setEvidence(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-2 right-2 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
-                     <div className="text-[10px] font-bold text-primary uppercase mb-1">{ev.type} Evidence</div>
-                     <div className="font-mono text-xs font-bold">{ev.id || ev.transaction_id}</div>
-                  </div>
-                ))
-              )}
-            </div>
-            {evidence.length > 0 && (
-              <div className="p-3 border-t border-border bg-gray-50 rounded-b-lg">
-                <button onClick={() => setEvidence([])} className="w-full px-3 py-1.5 text-danger border border-danger/20 text-xs font-bold rounded shadow-sm hover:bg-danger-light">Clear Evidence</button>
+                )}
               </div>
-            )}
-          </div>
-        )}
-
-        {startTime && endTime && (
-          <div className="absolute bottom-0 left-0 w-full bg-white border-t border-border p-4 shadow-sm z-20">
-             <div className="flex flex-col max-w-5xl mx-auto">
-                <div className="flex justify-between items-center mb-2">
-                  <div className="text-xs font-bold text-text-main flex items-center gap-2"><span className="text-[10px] text-text-muted uppercase tracking-wider">Investigation Timeline</span></div>
-                  <div className="text-xs font-bold text-primary bg-primary-light px-2 py-0.5 rounded border border-primary/20 shadow-sm">{formatTime(currentTime)}</div>
-                </div>
-                <div className="relative h-6 flex items-center group mb-4">
-                  <div className="absolute w-full h-1.5 bg-gray-200 rounded-full cursor-pointer" onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); setCurrentTime(startTime + pct * (endTime - startTime)); }}>
-                    <div className="absolute h-full bg-primary rounded-full" style={{ width: `${timelinePercent}%` }}></div>
+              
+              {selectedNode.data.raw.role !== 'victim' && (
+                <div className="${isDarkMode ? 'bg-red-900/20 border-red-800/50' : 'bg-red-50 border-red-200'} rounded-lg p-4 mb-6 shadow-sm">
+                  <div className="flex items-center ${isDarkMode ? 'text-red-400' : 'text-red-700'} font-bold mb-3 text-sm">
+                    <AlertTriangle className="w-4 h-4 mr-2" /> Why is this node flagged?
                   </div>
-                  <div className="absolute w-4 h-4 bg-white border-2 border-primary rounded-full shadow-sm -ml-2 cursor-grab transition-transform group-hover:scale-110" style={{ left: `${timelinePercent}%` }}></div>
+                  <ul className="text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} space-y-3">
+                    {nodeProfile?.risk?.signals && nodeProfile.risk.signals.length > 0 ? (
+                       nodeProfile.risk.signals.map((sig: any, idx: number) => (
+                         <li key={idx} className="leading-relaxed border-l-2 border-red-300 pl-3">
+                            <strong className="${isDarkMode ? 'text-white' : 'text-slate-900'} block">{sig.type}</strong>
+                            <span className="${isDarkMode ? 'text-slate-300' : 'text-slate-600'} text-xs">Evidence contribution: {sig.contribution}</span>
+                         </li>
+                       ))
+                    ) : (
+                      <li className="leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}">
+                        {isLoading ? 'Analyzing behavioral signals...' : `Connected to the flow at Hop ${selectedNode.data.raw.layer} with high transaction velocity.`}
+                      </li>
+                    )}
+                  </ul>
                 </div>
-                <div className="flex items-center justify-between">
-                   <div className="text-[10px] font-bold text-text-muted">{formatTime(startTime)}</div>
-                   <div className="flex items-center gap-4">
-                      <div className="flex bg-gray-50 rounded-md border border-border shadow-sm p-0.5">
-                        <button onClick={() => setCurrentTime(startTime)} className="p-1.5 text-text-muted hover:bg-gray-100 rounded" title="Reset to Start"><SkipBack size={14} /></button>
-                        <button onClick={() => { if (currentTime === endTime) setCurrentTime(startTime); setIsPlaying(!isPlaying); }} className={`p-1.5 rounded flex items-center gap-1 px-3 ${isPlaying ? 'bg-primary text-white font-bold' : 'text-text-main hover:bg-gray-100 font-bold'}`}>
-                          {isPlaying ? <Pause size={14} /> : <Play size={14} />} {isPlaying ? 'Pause' : 'Play'}
-                        </button>
-                        <button onClick={() => setCurrentTime(prev => prev === null || startTime === null ? prev : Math.max(startTime, prev - 60 * 1000))} className="p-1.5 text-text-muted hover:bg-gray-100 rounded" title="Previous minute">Previous</button>
-                        <button onClick={() => setCurrentTime(prev => prev === null || endTime === null ? prev : Math.min(endTime, prev + 60 * 1000))} className="p-1.5 text-text-muted hover:bg-gray-100 rounded" title="Next minute">Next</button>
-                        <button onClick={() => setCurrentTime(endTime)} className="p-1.5 text-text-muted hover:bg-gray-100 rounded" title="Skip to End"><RotateCcw size={14} className="scale-x-[-1]" /></button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-text-muted uppercase">Speed</span>
-                        <select value={playbackSpeed} onChange={(e) => setPlaybackSpeed(Number(e.target.value))} className="text-xs border border-border bg-gray-50 rounded px-1.5 py-1 font-bold shadow-sm">
-                          <option value={0.5}>0.5x</option><option value={1}>1x</option><option value={2}>2x</option><option value={5}>5x</option><option value={10}>10x</option>
-                        </select>
-                      </div>
-                   </div>
-                   <div className="text-[10px] font-bold text-text-muted">{formatTime(endTime)}</div>
+              )}
+
+              <div className="space-y-4">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} pb-2">Account Telemetry</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm font-normal">
+                  <div className="${isDarkMode ? 'bg-slate-950/50 border-slate-700' : 'bg-slate-50 border-slate-100'} p-3 rounded border">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Incoming</div>
+                    <div className="${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'} font-bold">₹{nodeProfile ? nodeProfile.summary.incoming_amount.toLocaleString() : '...'}</div>
+                    <div className="text-xs text-slate-500 mt-1">{nodeProfile?.summary.incoming_count || 0} transfers</div>
+                  </div>
+                  <div className="${isDarkMode ? 'bg-slate-950/50 border-slate-700' : 'bg-slate-50 border-slate-100'} p-3 rounded border">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Outgoing</div>
+                    <div className="${isDarkMode ? 'text-red-400' : 'text-red-600'} font-bold">₹{nodeProfile ? nodeProfile.summary.outgoing_amount.toLocaleString() : '...'}</div>
+                    <div className="text-xs text-slate-500 mt-1">{nodeProfile?.summary.outgoing_count || 0} transfers</div>
+                  </div>
                 </div>
-             </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

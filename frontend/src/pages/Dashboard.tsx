@@ -5,6 +5,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getHealth } from '../api';
+import DetectionEvaluation from '../components/DetectionEvaluation';
 
 export default function Dashboard() {
   const [search, setSearch] = useState("");
@@ -41,6 +42,7 @@ export default function Dashboard() {
         <section className="reference-panel"><div className="panel-title"><Network size={16} /> Investigation Graph <Link to="/investigate">Open graph <ArrowUpRight size={14} /></Link></div><div className="graph-preview"><span><Network size={28} /> No account selected</span><small>Search an account to load its real multi-hop trail</small></div></section>
         <section className="reference-panel"><div className="panel-title"><TriangleAlert size={16} /> Investigation Workflow</div><ul className="finding-list"><li>Search a real account from the TraceX dataset.</li><li>Review risk indicators and detector evidence.</li><li>Open graph, timeline, evidence, and case review from the investigation.</li></ul><Link to="/investigate" className="panel-action">Open Investigation Workspace <ArrowUpRight size={14} /></Link></section>
       </div>
+      <DetectionEvaluation />
     </div>
   );
 }

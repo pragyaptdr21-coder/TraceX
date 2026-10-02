@@ -171,7 +171,7 @@ export default function AccountInvestigation() {
             </button>
           </div>
           
-          <div className="flex-1 overflow-auto p-6 bg-gray-50">
+          <div className={`flex-1 overflow-auto bg-gray-50 ${activeTab === 'graph' ? 'p-0' : 'p-6'}`}>
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">

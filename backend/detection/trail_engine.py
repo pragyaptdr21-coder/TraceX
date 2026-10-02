@@ -26,16 +26,11 @@ class TrailEngine:
             if len(current_layer) > 2000:
                 current_layer = current_layer[:2000]
                 
-            # Build an efficient IN clause
-            # For DuckDB, string formatting is safe enough here since accounts are known structures,
-            # but parameterized is better. We'll use parameterization chunked if needed, or simple IN.
-            # To avoid variable binding limits, we can create a temporary table.
+            # Build an efficient IN clause using direct string interpolation for list
+            # DuckDB parser parses this in <1ms and vectorizes it.
+            accs_list_str = ", ".join([f"'{acc}'" for acc in current_layer])
             
-            con.execute("DROP TABLE IF EXISTS temp_current_layer")
-            con.execute("CREATE TEMP TABLE temp_current_layer (acc VARCHAR)")
-            con.executemany("INSERT INTO temp_current_layer VALUES (?)", [[acc] for acc in current_layer])
-            
-            query = """
+            query = f"""
                 SELECT 
                     Sender_Account, 
                     Receiver_Account, 
@@ -46,7 +41,7 @@ class TrailEngine:
                     Timestamp, 
                     Payment_Mode
                 FROM transactions
-                WHERE Sender_Account IN (SELECT acc FROM temp_current_layer)
+                WHERE Sender_Account IN ({accs_list_str})
             """
             
             results = con.execute(query).fetchall()

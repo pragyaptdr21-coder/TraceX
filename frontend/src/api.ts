@@ -86,7 +86,61 @@ export const getDetections = async (accountId: string): Promise<Detection[]> => 
   return res.data.data;
 };
 
-// Ready for next phases
+// Detection evaluation (precision / recall).
+//
+// The response carries metric fields ONLY when official ground truth exists.
+// `metrics_available: false` means no precision/recall figure may be rendered.
+export interface EvaluationPayload {
+  status: string;
+  metrics_available: boolean;
+  message?: string;
+  notes?: string[];
+  ground_truth: {
+    status: string;
+    usable: boolean;
+    path?: string;
+    ground_truth_accounts: number;
+    mule_accounts: number;
+    regular_accounts: number;
+    expected_mule_accounts: number;
+    expected_regular_accounts: number;
+    duplicate_accounts: string[];
+    invalid_labels: string[];
+    missing_labels: string[];
+    unknown_accounts: string[];
+    issues: { code: string; message: string; count: number; samples: string[] }[];
+  };
+  population_validated?: boolean;
+  ground_truth_accounts?: number;
+  mule_accounts?: number;
+  regular_accounts?: number;
+  predicted_mules?: number;
+  risk_threshold?: number;
+  true_positives?: number;
+  false_positives?: number;
+  true_negatives?: number;
+  false_negatives?: number;
+  precision?: number | null;
+  recall?: number | null;
+  f1?: number | null;
+  false_positive_rate?: number | null;
+  false_negative_rate?: number | null;
+  accuracy?: number | null;
+  per_detector?: Record<string, any> | null;
+  false_positive_analysis?: any;
+  threshold_comparison?: any[];
+}
+
+export const getPrecisionRecall = async (): Promise<EvaluationPayload> => {
+  const res = await api.get('/api/evaluation/precision-recall');
+  return res.data.data;
+};
+
+export const downloadEvaluationReport = async (): Promise<Blob> => {
+  const res = await api.get('/api/evaluation/report', { responseType: 'blob' });
+  return res.data;
+};
+
 export const getTrail = async (accountId: string, hops = 4) => {
   const res = await api.get(`/api/accounts/${accountId}/trail`, { params: { hops, max_edges: 1500 } });
   return res.data.data;

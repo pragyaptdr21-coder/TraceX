@@ -20,6 +20,23 @@ from backend.detection.terminal_detector import TerminalDetector
 from backend.detection.risk_engine import RiskEngine
 from backend.detection.trail_engine import TrailEngine
 
+from backend.evaluation.engine import (
+    DEFAULT_DB_PATH,
+    EvaluationResult,
+    evaluate_predictions,
+    run_evaluation,
+)
+from backend.evaluation.ground_truth import (
+    EXPECTED_MULE_ACCOUNTS,
+    EXPECTED_REGULAR_ACCOUNTS,
+    load_ground_truth_from_rows,
+)
+from backend.evaluation.predictions import (
+    DEFAULT_RISK_THRESHOLD,
+    get_predictions,
+)
+from backend.evaluation.report import render_report
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "../storage/tracex.duckdb")
 
 # Global cache for detection results
@@ -304,6 +321,24 @@ class ExportRequest(BaseModel):
     transaction_ids: List[str]
     metadata: dict = None
 
+class GroundTruthRow(BaseModel):
+    account_id: str
+    label: int
+
+class EvaluationRequest(BaseModel):
+    """Optional ground-truth input for the precision/recall evaluation.
+
+    Every field is optional so an empty POST is valid: it evaluates against
+    evaluation/ground_truth.csv, which is the normal path.
+    """
+    ground_truth: List[GroundTruthRow] = None
+    ground_truth_path: str = None
+    threshold: int = None
+    refresh: bool = False
+    allow_population_mismatch: bool = False
+    expected_mule_accounts: int = None
+    expected_regular_accounts: int = None
+
 @app.post("/api/investigations/export")
 def export_investigation(req: ExportRequest):
     """Exports full transaction records for the requested transaction IDs."""
@@ -345,5 +380,110 @@ def export_investigation(req: ExportRequest):
         iter([output.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=investigation_export.csv"}
+    )
+
+# ---------------------------------------------------------------------------
+# Detection evaluation (precision / recall)
+#
+# These endpoints score the existing detector pipeline against externally
+# supplied ground truth. They deliberately hold no labels of their own: with no
+# official ground_truth.csv the response is NOT_AVAILABLE and carries no metric
+# keys, so a missing label set can never be mistaken for a real score.
+# ---------------------------------------------------------------------------
+
+def _known_accounts() -> set:
+    """Account ids present in the 2M dataset, for label validation."""
+    try:
+        con = _get_con()
+        rows = con.execute(
+            "SELECT DISTINCT Sender_Account FROM transactions "
+            "UNION SELECT DISTINCT Receiver_Account FROM transactions"
+        ).fetchall()
+        con.close()
+        return {r[0] for r in rows if r and r[0]}
+    except Exception:
+        # Validation of "account exists in dataset" degrades gracefully; the
+        # structural and population checks still run.
+        return set()
+
+
+@app.get("/api/evaluation/precision-recall")
+def get_precision_recall(
+    threshold: int = Query(DEFAULT_RISK_THRESHOLD, ge=0, le=100),
+    refresh: bool = Query(False),
+    allow_population_mismatch: bool = Query(False),
+):
+    """Evaluate using evaluation/ground_truth.csv."""
+    result = run_evaluation(
+        db_path=DB_PATH,
+        threshold=threshold,
+        risk_engine=app_state["risk_engine"],
+        known_accounts=_known_accounts(),
+        refresh=refresh,
+        allow_population_mismatch=allow_population_mismatch,
+    )
+    return _evaluation_response(result)
+
+
+@app.post("/api/evaluation/precision-recall")
+def post_precision_recall(req: EvaluationRequest):
+    """Evaluate using an inline, validated ground-truth payload.
+
+    The payload follows the same rules as the CSV file, including the
+    1,500 / 23,500 population check.
+    """
+    if req.ground_truth:
+        labels = load_ground_truth_from_rows(
+            req.ground_truth,
+            source="request",
+            known_accounts=_known_accounts(),
+            expected_mules=req.expected_mule_accounts or EXPECTED_MULE_ACCOUNTS,
+            expected_regular=req.expected_regular_accounts or EXPECTED_REGULAR_ACCOUNTS,
+            allow_population_mismatch=req.allow_population_mismatch,
+        )
+        if not labels.is_usable:
+            return _evaluation_response(EvaluationResult(status=labels.status, ground_truth=labels))
+
+        predictions = get_predictions(
+            DB_PATH,
+            threshold=req.threshold or DEFAULT_RISK_THRESHOLD,
+            risk_engine=app_state["risk_engine"],
+            refresh=req.refresh,
+        )
+        return _evaluation_response(evaluate_predictions(labels, predictions))
+
+    # No inline labels: fall back to the file on disk.
+    result = run_evaluation(
+        db_path=DB_PATH,
+        ground_truth_path=req.ground_truth_path,
+        threshold=req.threshold or DEFAULT_RISK_THRESHOLD,
+        risk_engine=app_state["risk_engine"],
+        known_accounts=_known_accounts(),
+        refresh=req.refresh,
+        allow_population_mismatch=req.allow_population_mismatch,
+    )
+    return _evaluation_response(result)
+
+
+def _evaluation_response(result: EvaluationResult) -> dict:
+    payload = result.as_dict()
+    return {"success": result.has_metrics, "data": payload}
+
+
+@app.get("/api/evaluation/report")
+def download_evaluation_report():
+    """Return the text evaluation report as a downloadable file."""
+    result = run_evaluation(
+        db_path=DB_PATH,
+        risk_engine=app_state["risk_engine"],
+        known_accounts=_known_accounts(),
+    )
+    text = render_report(result)
+    return Response(
+        content=text,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": "attachment; filename=TraceX_Precision_Recall_Evaluation_Report.txt"
+        },
     )
 

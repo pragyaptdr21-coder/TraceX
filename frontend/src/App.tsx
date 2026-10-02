@@ -1,5 +1,6 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Sun, Moon } from 'lucide-react';
 import { 
   LayoutDashboard, Search, FolderOpen,
   Database, GitMerge, Network, Clock3, TriangleAlert, FileCheck, Settings,
@@ -8,6 +9,8 @@ import {
 import Dashboard from './pages/Dashboard';
 import AccountInvestigation from './pages/AccountInvestigation';
 import CaseDiary from './pages/CaseDiary';
+import GraphFullscreen from './pages/GraphFullscreen';
+import SubgraphInvestigation from './pages/SubgraphInvestigation';
 import { useNavigate } from 'react-router-dom';
 
 function Sidebar() {
@@ -21,6 +24,7 @@ function Sidebar() {
     { name: 'Investigation Graph', path: '/investigate?view=graph', icon: Network },
     { name: 'Timeline', path: '/investigate?view=graph', icon: Clock3 },
     { name: 'Risk Analysis', path: '/investigate?view=risk', icon: TriangleAlert },
+    { name: 'Subgraph Investigation', path: '/subgraph', icon: Network },
     { name: 'Investigation Briefs', path: '/diary', icon: FileCheck },
   ];
 
@@ -38,7 +42,11 @@ function Sidebar() {
         <div className="tracex-section-label">Investigation Suite</div>
         <nav className="tracex-nav">
           {navItems.map((item) => {
-            const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith('/investigate') && ((item.name === 'Cases' && !location.search) || location.search.includes(item.path.split('view=')[1] || ''));
+            const isActive = item.path === '/' 
+              ? location.pathname === '/' 
+              : item.path.startsWith('/investigate')
+                ? location.pathname.startsWith('/investigate') && ((item.name === 'Cases' && !location.search) || location.search.includes(item.path.split('view=')[1] || ''))
+                : location.pathname.startsWith(item.path);
             const targetPath = accountQuery && item.path.startsWith('/investigate')
               ? `${item.path}${item.path.includes('?') ? '&' : '?'}q=${encodeURIComponent(accountQuery)}`
               : item.path;
@@ -74,6 +82,25 @@ function TopBar() {
     if (query.trim()) navigate(`/investigate?q=${encodeURIComponent(query.trim())}`);
   };
 
+  const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+  
+  useEffect(() => {
+    // Default to dark mode globally on load
+    document.documentElement.classList.add('dark');
+    setIsDark(true);
+  }, []);
+
+  const toggleTheme = () => {
+    const nextDark = !isDark;
+    setIsDark(nextDark);
+    if (nextDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    window.dispatchEvent(new Event('theme-change'));
+  };
+
   return (
     <header className="tracex-topbar">
       <div className="tracex-case-pill"><span /> Workspace: <strong>Live investigation</strong></div>
@@ -82,13 +109,29 @@ function TopBar() {
         <Search size={14} />
         <input type="text" placeholder="Search by Case or Account" value={query} onChange={event => setQuery(event.target.value)} />
       </form>
-      <div className="tracex-alert"><Bell size={14} /> Review signals after selecting an account</div>
+      <button onClick={toggleTheme} className="ml-2 px-3 py-1.5 flex items-center gap-2 border rounded font-bold text-xs uppercase" style={{
+        backgroundColor: isDark ? '#4f46e5' : '#f1f5f9',
+        color: isDark ? 'white' : '#0f172a',
+        borderColor: isDark ? '#4338ca' : '#cbd5e1'
+      }}>
+        {isDark ? <Sun size={14} className="text-amber-300" /> : <Moon size={14} className="text-indigo-500" />}
+        {isDark ? 'Light' : 'Cyber'} Mode
+      </button>
+      <div className="tracex-alert ml-auto"><Bell size={14} /> Review signals after selecting an account</div>
       <div className="tracex-user"><div><strong>Investigator workspace</strong><small>Local session</small></div><UserRound size={17} /></div>
     </header>
   );
 }
 
 export default function App() {
+  const location = useLocation();
+
+  // The graph viewer is a dedicated surface: sidebar, topbar and page chrome are
+  // all dropped so the network gets the whole viewport.
+  if (location.pathname === '/graph') {
+    return <GraphFullscreen />;
+  }
+
   return (
     <div className="tracex-app-shell">
       <Sidebar />
@@ -99,6 +142,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/investigate" element={<AccountInvestigation />} />
             <Route path="/diary" element={<CaseDiary />} />
+            <Route path="/subgraph" element={<SubgraphInvestigation />} />
           </Routes>
         </div>
       </main>
