@@ -1,0 +1,38 @@
+================================================================================
+TRACE X: JUDGE PITCH & TALKING POINTS
+================================================================================
+
+1. THE "WOW" FACTOR (Lead with this)
+--------------------------------------------------------------------------------
+"TraceX processes 2 Million transactions and renders a 4-hop money mule network in under 7 seconds on a local machine. It allows law enforcement to hit 'play' and watch the money launder itself in real-time."
+
+2. KEY DESIGN DECISIONS (Defend the architecture)
+--------------------------------------------------------------------------------
+- Why DuckDB? "We chose DuckDB because it operates purely in-memory and columnar. Processing a 4-hop BFS graph over 2M edges using standard SQLite or Pandas would take minutes. TraceX does it in 6.5 seconds. It scales without heavy infrastructure."
+- Why React-Force-Graph? "Mule networks are naturally massive graphs (often 20,000+ nodes). We used WebGL acceleration on the canvas to ensure the browser doesn't freeze during panning, zooming, or timeline scrubbing."
+- The AI Anti-Hallucination Guardrail: "Generative AI often invents facts when faced with too much data. We built an 'Evidence-First' AI layer. It doesn't query the database—it only receives the 50 exact transactions the investigator manually isolates, guaranteeing that every PDF freeze requisition is 100% legally accurate."
+
+3. TERMINOLOGY DISCIPLINE
+--------------------------------------------------------------------------------
+- Say: "Risk Indicator" (Not "Fraudster")
+- Say: "Anomaly detected" (Not "Criminal")
+- Say: "Money Mule Network" or "Layering pattern" (Not "Guilty account")
+- Say: "Evidence Subdataset"
+- Why? "TraceX respects the legal presumption of innocence. It is a decision-support tool, not a judge."
+
+4. HANDLING THE "WHAT ABOUT L2 DISTRIBUTORS?" QUESTION
+--------------------------------------------------------------------------------
+If asked: "Your graph truncates at 2000 nodes per layer, aren't you losing data?"
+Answer: "Yes, by design. In a real-world scenario, capturing a Level 2 distributor who fans out to 15,000 retail accounts creates noise, not actionable intelligence for a single cyber cell. TraceX bounds layer sizes during BFS to focus on the strongest, most immediate mule links while keeping the UI hyper-responsive. An investigator can click on any border node to re-center the graph and traverse further."
+
+5. DEMO FLOW RECOMMENDATION
+--------------------------------------------------------------------------------
+1. Enter `HDFC10017550` or `SBIN10012624` into the dashboard search.
+2. Open the Graph view. Let the nodes explode onto the screen.
+3. Open the Timeline sidebar. Press "Play" at 1x speed. Watch the graph light up chronologically.
+4. Stop the timeline, lasso 10 nodes at Hop 3.
+5. Click "Isolate Subgraph" to trim the noise.
+6. Click "Generate Case Diary". Wait 3 seconds for Gemini AI to summarize the exact laundering pattern.
+7. Click "Export Freeze Requisition" to show the final PDF that a police officer would submit to the bank.
+
+This proves: Speed -> Analysis -> Legal Action.

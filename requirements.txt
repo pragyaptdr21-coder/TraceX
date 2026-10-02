@@ -3,3 +3,8 @@ duckdb
 fastexcel
 openpyxl
 pyarrow
+fastapi
+uvicorn
+httpx
+pytest
+google-genai

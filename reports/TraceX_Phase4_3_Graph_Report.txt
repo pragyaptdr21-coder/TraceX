@@ -1,0 +1,49 @@
+TRACE X PHASE 4.3 - INVESTIGATION GRAPH REPORT
+=============================================
+
+1. GRAPH LIBRARY SELECTED
+---------------------------------------------
+- Library: `react-force-graph-2d`
+- Why it was selected: It is lightweight, integrates seamlessly with React and Vite, supports HTML5 Canvas rendering allowing it to efficiently handle 500+ nodes and 1500+ edges, and provides out-of-the-box support for interactive controls (zoom, pan, drag), directional arrows, and click event handlers without freezing the UI.
+
+2. TRAIL API INTEGRATION
+---------------------------------------------
+- The graph securely calls `GET /api/accounts/{account_id}/trail?hops={limit}` exactly as intended without re-calculating any logic. 
+- It uses the actual response parameters: `root_account`, `nodes`, and `edges` (with embedded `transaction_id`, `amount`, `timestamp`, `payment_mode`, and `hop`).
+
+3. NODE REPRESENTATION
+---------------------------------------------
+- Each node visually corresponds to a unique account.
+- The `root_account` is highlighted prominently in blue (as the "Source Account"), Hop 1 connections in light blue, and Hop 2+ connections in gray.
+- Selecting a node opens a detailed "Node Intelligence" panel containing the Account ID, hop layer, and relevant Risk Engine telemetry (Mule Risk Index and Detection Signals) fetched from the `getAccount` endpoint.
+
+4. EDGE REPRESENTATION
+---------------------------------------------
+- Edges natively map transaction flows using `source` -> `target` logic with visual directional arrows indicating the flow of funds.
+- Selecting an edge reveals a "Transaction Intelligence" sidebar detailing the transaction ID, precise flow direction, amount in INR, timestamp, and payment mode.
+
+5. HOP HANDLING
+---------------------------------------------
+- Implemented a "HOP LIMIT" select menu within the header bar (1 Hop to 4 Hops).
+- Changing this dropdown immediately invokes the API again with the new `hops` value, maintaining real backend constraints instead of attempting inaccurate client-side filtering.
+
+6. CONTROLS IMPLEMENTED
+---------------------------------------------
+- Source Account Search text input allowing quick target switching.
+- Standard viewport controls: Zoom In, Zoom Out, Fit to Screen.
+- Force-directed physics automatically reposition nodes on interaction (drag / pan).
+- Auto-centering and zooming on node selection.
+
+7. REAL-DATA VALIDATION & TESTS
+---------------------------------------------
+- Validated manually using `HDFC10017550` directly against the running Uvicorn API. The JSON response correctly unpacked and mapped directly into the ForceGraph nodes/links structure without errors.
+- Confirmed that the source account accurately fetches its complementary Risk Information, while standard nodes just report their topological layer distance.
+- Handled empty trails cleanly with a transparent "No downstream trail found." state. 
+- Handled non-existent accounts cleanly ("Account not found.").
+
+8. VISUAL DESIGN ALIGNMENT
+---------------------------------------------
+- Maintained the strict TRACEX Light-Theme branding created in Phase 4.2.
+- Avoided flashy animations; the force simulation settles quickly to present a professional analytic chart.
+- The Graph component uses CSS grid spacing, strict borders, and small capitalized typography standard in professional forensic tools.
+- Did not implement timeline playback, case diary AI, or PDF exports (deferred to Phase 4.4+).

@@ -1,0 +1,43 @@
+TRACE X PHASE 4.5 - INVESTIGATION EXPORT & ISOLATION REPORT
+===========================================================
+
+1. SUBGRAPH ISOLATION
+---------------------
+- Implemented "Isolate Subgraph" functionality. When an investigator selects a node and clicks the isolate button, the graph scopes down to just that node's BFS trail up to the configured hops.
+- An "Exit Isolation" button restores the previous root account graph without reloading the page.
+- This uses existing backend logic to natively traverse from the newly selected root, maintaining a "single source of truth" and not forcing complex frontend algorithms.
+
+2. EVIDENCE SELECTION
+---------------------
+- Implemented a "Selected Evidence" feature.
+- Investigators can click on nodes (accounts) or edges (transactions) to see their intelligence panels.
+- Both panels have an "Add to Evidence" button.
+- A "Selected Evidence" side-panel tracks and displays added evidence, providing an easy overview of items of interest for the case diary.
+- Evidence can be cleared easily.
+
+3. SUBDATASET EXPORT
+--------------------
+- Added an "Export Subdataset" button.
+- Added a POST `/api/investigations/export` endpoint to the backend which accepts a payload of target `transaction_ids` (provided by the frontend's current timeline and hop filtered graph data) and metadata.
+- Returns a complete CSV snapshot containing all available fields for those exact transactions (Transaction_ID, Sender, Receiver, Amount, Timestamp, Mode, IP, Device, Narration). 
+- Avoids fetching the whole 2-million-row database by querying only exactly what is visible to the investigator at that very moment.
+
+4. REAL DATA VALIDATION
+-----------------------
+- Verified the export endpoint works against DuckDB and parses polars DataFrames into standard python `csv.DictWriter` responses correctly.
+- Confirmed that modifying the timeline or hop depth updates the exact set of transactions returned in the CSV export.
+- Ensured metadata rows (such as timeline scope, hops, account count, and transaction count) appear at the top of the CSV file seamlessly.
+- CSV retains unchanged source values with exact data precision.
+
+5. PERFORMANCE
+--------------
+- The export fetches efficiently using SQL `IN (...)` on DuckDB without iterating unneeded data.
+- Does not load massive objects into the browser memory. Instead, streaming responses handle CSV downloading directly to the filesystem.
+
+6. TESTS
+--------
+- Isolation: PASS
+- Exit Isolation: PASS
+- Export API endpoint: PASS
+- CSV Integrity: PASS
+- Evidence selection UI: PASS

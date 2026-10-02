@@ -1,0 +1,121 @@
+TRACE X PHASE 4 PRE-IMPLEMENTATION AUDIT
+=========================================
+
+1. PROBLEM STATEMENT MODULE C REQUIREMENTS
+-----------------------------------------
+From Problem Statement.pdf:
+- Graph visualization: Interactive node-link diagram for accounts and transactions.
+- Victim account investigation: Search for a victim account and display its flow.
+- 4-hop transaction trail: Expand down to 4 hops maximum.
+- Temporal playback: Provide a 15-day timeline slider for minute-by-minute investigation.
+- One-click subgraph isolation: Ability to click a node and isolate its subgraph.
+- Subdataset export: Export isolated subgraph transactions.
+- Responsive UI: Must handle large scale without freezing.
+- Supported graph technologies: PDF recommends libraries like React-Force-Graph, D3, or Cytoscape.
+
+2. CURRENT PROJECT STRUCTURE
+-----------------------------------------
+backend/
+    detection/ (Core detection logic: velocity, distributor, collector, terminal, cycle, risk_engine, trail_engine, run_detection)
+    ingestion/ (CSV ingestion and benchmark scripts)
+    services/ (account_service.py)
+    inspect_dataset.py
+    verify_timestamp.py
+frontend/ (Empty directory)
+storage/ (DuckDB file tracex.duckdb)
+tests/ (Pytest test suite)
+reports/ (Audit reports)
+
+3. FRONTEND AUDIT
+-----------------------------------------
+- React configured: No
+- Vite configured: No
+- Tailwind configured: No
+- TypeScript used: No
+- Routing system: None
+- UI/component library: None
+- Graph libraries: None (react-force-graph, d3, cytoscape, vis are NOT installed)
+Frontend directory is completely empty.
+
+4. BACKEND API AUDIT
+-----------------------------------------
+Currently, there is NO HTTP API layer (e.g., Flask, FastAPI, Express).
+The backend exists only as Python modules/classes.
+
+Missing endpoints needed for frontend:
+- GET /api/search?q=<account> -> NOT AVAILABLE
+- GET /api/account/<id>/history -> NOT AVAILABLE (Logic exists in account_service.py)
+- GET /api/account/<id>/risk -> NOT AVAILABLE (Logic exists in risk_engine.py)
+- GET /api/trail/<account>?hops=4 -> NOT AVAILABLE (Logic exists in trail_engine.py)
+- GET /api/detections -> NOT AVAILABLE
+
+5. DATABASE AUDIT (DuckDB)
+-----------------------------------------
+Location: storage/tracex.duckdb
+Table: transactions
+Columns:
+- internal_id (UINTEGER)
+- Transaction_ID (VARCHAR)
+- Sender_Account (VARCHAR)
+- Receiver_Account (VARCHAR)
+- Sender_IFSC (VARCHAR)
+- Receiver_IFSC (VARCHAR)
+- Amount (DOUBLE)
+- Timestamp (TIMESTAMP)
+- Payment_Mode (VARCHAR)
+- Narration (VARCHAR)
+- IP_Address (VARCHAR)
+- Device_Type (VARCHAR)
+
+The frontend can safely retrieve Sender, Receiver, Amount, Timestamp, Transaction_ID, Payment_Mode, Narration, IP, Device, and IFSC.
+
+6. DETECTION OUTPUT AUDIT
+-----------------------------------------
+The detectors (Velocity, Collector, Distributor, Terminal, Cycle) output a List of Dictionaries.
+Important fields: account_id, detection_type, score_contribution, evidence (dict).
+Evidence contains transaction IDs, amounts, and timestamps.
+Can frontend consume directly?: No API exists yet to serve this JSON to the frontend.
+
+7. 4-HOP GRAPH AUDIT (trail_engine.py)
+-----------------------------------------
+Input: victim_account (str), max_hops (int=4)
+Output: Dictionary with root_account, nodes (list), edges (list), total_hops.
+Node structure: {"id": "ACC1", "layer": 0}
+Edge structure: {"source": "S", "target": "R", "transaction_id": "T", "amount": 100, "timestamp": "...", "hop": 1}
+Cycles handled: Yes, via visited_accounts set.
+Duplicate nodes: Handled.
+Layer limit: Truncated at 2000 nodes per hop to prevent explosion.
+Suitable for visualization: Yes, nodes/edges format is standard for graph libraries.
+
+8. PERFORMANCE AUDIT
+-----------------------------------------
+2M ingestion/indexing: ~6.5 seconds.
+Account history retrieval: Instant via DuckDB.
+4-hop traversal: Fast, truncated at 2000 nodes per hop.
+Frontend handling 500+ nodes/1500+ edges: NOT YET VERIFIED (Frontend does not exist).
+
+9. FRONTEND -> BACKEND DATA FLOW
+-----------------------------------------
+Missing: Frontend application, HTTP Client, API Server (FastAPI/Flask).
+Existing: trail_engine (4-hop logic), DuckDB data.
+
+10. MODULE C GAP ANALYSIS
+-----------------------------------------
+| Module C Requirement | Existing | Partial | Missing | Evidence |
+|----------------------|----------|---------|---------|----------|
+| Graph Visualization  | No       | No      | Missing | No frontend files exist |
+| Victim Search        | No       | No      | Missing | No frontend files exist |
+| 4-hop BFS Logic      | Yes      | Yes     | No      | backend/detection/trail_engine.py |
+| Temporal Playback    | No       | No      | Missing | No frontend files exist |
+| Subgraph Isolation   | No       | No      | Missing | No frontend files exist |
+| API Server           | No       | No      | Missing | No HTTP server file in backend |
+
+11. PHASE 4 IMPLEMENTATION PLAN
+-----------------------------------------
+Phase 4.1: Build Backend API Server (FastAPI) to expose trail_engine and account_service.
+Phase 4.2: Setup Frontend Shell (Vite + React + TS + Tailwind).
+Phase 4.3: Implement Graph Visualization (react-force-graph).
+Phase 4.4: Add Victim Search & Risk Panel.
+Phase 4.5: Implement 15-day Temporal Playback slider.
+Phase 4.6: Add Subgraph Isolation and Export features.
+Phase 4.7: Performance Testing on real 2M data.

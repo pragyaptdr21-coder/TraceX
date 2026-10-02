@@ -1,0 +1,42 @@
+===========================================================
+TraceX Phase 3 - Judge Answers
+===========================================================
+
+Q1. What graph algorithm/pattern do you use?
+A: We use a combination of vectorized centralities (In-Degree and Out-Degree aggregations for Collectors/Distributors), temporal windowed self-joins (for High-Velocity pass-through and Cyclical Smurfing), and Breadth-First Search (BFS) for the dynamic 4-hop downstream trail generation.
+
+Q2. How exactly does high-velocity pass-through work?
+A: We match an incoming transaction to all subsequent outgoing transactions for a specific account. We sum outgoing transactions that occurred strictly between 3 and 15 minutes after the incoming deposit. If this sum represents >= 90% of the incoming amount and spans multiple (>1) transfers, the pass-through flag is triggered.
+
+Q3. What makes an account an L1 Collector?
+A: An account is classified as a Collector Mule (L1) based on high in-degree centrality coupled with multiple distinct senders. Specifically, our engine aggregates incoming transactions and verifies that deposits originated from at least 5 strictly distinct sender accounts. 
+
+Q4. What makes an account an L2 Distributor?
+A: An account is flagged as a Distributor Mule (L2) based on fan-out behavior. We verify that incoming funds are sliced into exactly 3 to 7 distinct downstream recipient accounts, directly mirroring the pattern defined in the PDF.
+
+Q5. How do you identify L3 terminal indicators?
+A: We execute specific string matches against the transaction metadata. An account is flagged if outgoing funds map to foreign IPs starting with '185.' or '194.', device user-agents 'Web_Emulator' or 'Linux_Script', or if narrations contain 'crypto', 'wallet', or 'p2p' strings.
+
+Q6. How do you detect cyclical smurfing?
+A: We use a depth-bounded structural self-join. The detector seeks out 3-hop relationships where funds move sequentially through accounts (e.g., A -> B -> C -> A), specifically enforcing that the timestamps sequentially increase to reflect realistic flow.
+
+Q7. How is the 0–100 Mule Risk Index calculated?
+A: The index aggregates points up to a hard cap of 100. It evaluates the presence of discrete detection signals: +25 each for Velocity, Collector, Distributor, and Cycle patterns, and +50 if a definitive Terminal cash-out indicator is detected.
+
+Q8. Which thresholds come directly from the PDF?
+A: The >= 90% dispersed amount, the 3 to 15-minute window, the multiple outgoing transfers constraint, the exactly 3 to 7 downstream fan-out range, the specific IPs (185/194) and device enumerations (Web_Emulator/Linux_Script), and the 4-hop (< 2 seconds) latency limit.
+
+Q9. Which thresholds are engineering choices?
+A: The numerical limit of >= 5 distinct senders for Collector mules is an engineering choice designed to filter false positives for generic entities. The limit of 3-hops for cycle evaluation and the specific Risk Index point distribution (+25/+50) are also configurable engineering bounds to ensure computational viability on 2M rows.
+
+Q10. How do you avoid false positives?
+A: We strictly avoid simplistic rules like "high volume = mule". Instead, we demand behavioral intersections, such as requiring funds to be dispersed within a strict 3-to-15 minute bound or filtering strictly by distinct counterparty counts rather than basic transaction volume. Terminal indicators generate high risk signals but are presented alongside evidence, not treated as instant criminal conviction.
+
+Q11. How does 4-hop BFS work?
+A: Starting from the victim node (Hop 0), the engine dynamically queries the DuckDB backend for outgoing transactions. It registers the downstream nodes as Hop 1, places them in a queue, and iterates layer-by-layer up to depth 4. A `visited_accounts` tracker prunes nodes that have already been explored to prevent looping logic.
+
+Q12. How do you meet the <2 second target?
+A: Instead of pulling all 2 million edges into Python memory, the BFS algorithm queries DuckDB exclusively for the localized nodes in the active hop using native `IN` matching and temporary tables. By maintaining the `visited_accounts` cycle protection, we prevent graph explosions, routinely yielding multi-hop maps in ~1.5 seconds.
+
+Q13. How will you evaluate precision and recall?
+A: The detection framework outputs binary inclusion arrays (candidates vs regular accounts). While the official ground-truth labels for the 1,500 mules were not packaged directly within the CSV, the system is fully instrumented to calculate TP, FP, TN, and FN via standard metric bindings once those specific IDs are provided by the judges.

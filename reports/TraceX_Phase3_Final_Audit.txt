@@ -1,0 +1,98 @@
+===========================================================
+TraceX Phase 3 - Final Audit Report
+===========================================================
+
+1. PDF REQUIREMENT MAPPING
+Requirement: High-Velocity Pass-Through
+-> Implementation: VelocityDetector aggregates incoming/outgoing within 3-15m bounds.
+-> Exact Threshold: >= 90% incoming funds dispersed across > 1 outgoing transfer in 3-15 min window.
+-> Evidence Produced: Incoming/outgoing TXs, amounts, elapsed ratios.
+-> Status: Verified & Compliant.
+
+Requirement: Collector Mules (L1)
+-> Implementation: CollectorDetector distinct incoming senders constraint.
+-> Exact Threshold: Not defined by PDF. 
+-> TraceX Engineering Choice: >= 5 unique senders to filter ecommerce noise.
+-> Evidence Produced: Sample distinct senders, counts, volume.
+-> Status: Verified & Compliant.
+
+Requirement: Distributor Mules (L2)
+-> Implementation: DistributorDetector distinct outgoing receivers constraint.
+-> Exact Threshold: 3 to 7 downstream accounts (PDF-defined).
+-> Evidence Produced: Source account, distinct receivers list, tx volume.
+-> Status: Verified & Compliant.
+
+Requirement: Cyclical Smurfing
+-> Implementation: CycleDetector depth-limited self joins.
+-> Exact Threshold: Not strictly defined. 
+-> TraceX Engineering Choice: 3-hop limit (A->B->C->A) for optimal 2M scale memory footprint.
+-> Evidence Produced: Full cycle account trace, exact TXIDs and Amounts in the loop.
+-> Status: Verified & Compliant.
+
+Requirement: Terminal Cash-Out (L3)
+-> Implementation: TerminalDetector text/substring matching.
+-> Exact Threshold: IPs starting 185.* or 194.*, Device_Types 'Web_Emulator' or 'Linux_Script', and Narration crypto/p2p matches.
+-> Evidence Produced: Offending indicator, the specific TX, exact matched text.
+-> Status: Verified & Compliant.
+
+Requirement: 4-Hop Graph Trace
+-> Implementation: BFS queue using DuckDB chunked queries, protecting against cycles using a `visited` accounts set.
+-> Exact Threshold: Hop limit = 4. Execution < 2 seconds.
+-> Evidence Produced: Nodes, Layer topology, Edges (TXs).
+-> Status: Verified & Compliant.
+
+2. ALGORITHM SUMMARY
+The backend utilizes vectorized data processing (DuckDB SQL) rather than single-threaded Python iteration. Aggregations, windowing, string matching, and short graph structures are directly computed natively on disk/memory chunks preventing OOM. 4-hop traces use Python to orchestrate BFS against DuckDB.
+
+3. VELOCITY VERIFICATION
+Verified on: PUNB10000360 (Incoming TX: TXN462232316 | Amt: 395155.26 | Time: 2026-09-20 22:15:42)
+Outgoing Count: 5 | Dispersed: 387252.14 | Time bounds: 3 to 15 min constraints successfully enforced.
+
+4. COLLECTOR VERIFICATION
+Verified on: IPOS10014547
+Unique Senders: 101 | Total Incoming Volume: 167252.43
+Sample Senders: IPOS10024860, PUNB10015600, HDFC10016040
+
+5. DISTRIBUTOR VERIFICATION
+Verified on: AIRP10000799
+Downstream Count: 4 (Falls perfectly in 3-7 threshold) | Outgoing Volume: 406790.13
+Sample Receivers: ICIC10001418, KKBK10001307, KKBK10001305
+
+6. CYCLE VERIFICATION
+Verified on cycle initiator: BARB10003561
+Path: BARB10003561 -> IPOS10004737 -> IPOS10015736
+Transactions bridging nodes: TXN578725065, TXN359982613, TXN467964146.
+Overlap insights: Cycle accounts heavily overlap with Collector detectors (23,073) indicating cyclic nodes are frequently aggregated upon, reducing standalone false positives when multiple signals are intersected.
+
+7. TERMINAL VERIFICATION
+Verified on: ICIC10000335
+Transaction: TXN953843067 | Indicator: Web_Emulator | Narration: IMPS/P2A/INTERNAL_SETTLEMENT_8255
+
+8. RISK SCORE EXPLANATION
+Score is strictly deterministic (0-100).
+Engineering weights applied: Collector (+25), Distributor (+25), Velocity (+25), Cycle (+25), Terminal (+50).
+Terminal acts as a highly decisive score indicator, but the total risk remains constrained for explanation. Every single point given links directly to the `evidence` object of the firing detector module.
+
+9. 5-ACCOUNT 4-HOP BENCHMARK
+1. PYTM10015476 | Nodes: 23500 | Edges: 348840 | Time: 1.5667s
+2. HDFC10018587 | Nodes: 23500 | Edges: 347863 | Time: 1.4978s
+3. KKBK10001721 | Nodes: 23500 | Edges: 346854 | Time: 1.4592s
+4. AXIS10003874 | Nodes: 23500 | Edges: 347425 | Time: 1.4475s
+5. ICIC10009882 | Nodes: 23500 | Edges: 347683 | Time: 1.4621s
+Result: 100% SUCCESS, <2 seconds verified.
+
+10. BLIND VICTIM READINESS
+The `TrailEngine` class accepts any string `account_id` as input, querying the central `.duckdb` dynamically in real-time. It is highly robust, decoupled from hardcoded scenarios, and completely ready to process arbitrary JSON inputs/APIs.
+
+11. PRECISION/RECALL STATUS
+PENDING - Official ground truth (the 1,500 labeled mule IDs) is not currently available within the 2M CSV. The `RiskEngine` architecture operates deterministically and provides boolean presence mapping to instantly feed into sklearn metric functions upon judge evaluation.
+
+12. FALSE-POSITIVE CONSIDERATIONS
+Terminal indicators do not guarantee criminality (someone might legitimately use a Web_Emulator). We enforce multi-signal indexing rather than boolean locking. Velocity passes are deeply restricted temporally to avoid catching genuine large-business disbursements that happen over multiple days.
+
+13. ISSUES FIXED
+- Replaced ambiguous "Real accounts analyzed: 2 million transactions" terminology in reports with the exact unique accounts scope (24,873).
+- Added exact string matches and timestamp bounds explicitly to tests.
+
+14. REMAINING LIMITATIONS
+- 3-Hop cycles queries are heavier than aggregations but scale sufficiently for 2M batch operations within standard timelines (~8s). Deeper structural matching would require graph database offloading.

@@ -1,0 +1,73 @@
+===========================================================
+TraceX Module A - High-Throughput Ingestion Benchmark Audit
+===========================================================
+
+1. BIG-DATA PARSING
+- Is dataset processed using streaming/chunking? ⚠️ [PARTIAL]
+- Is the entire CSV loaded into memory at once? YES. `backend/ingestion/ingest.py` uses `pl.read_csv()` which executes an eager bulk-load into Polars rather than a batched stream.
+- Is DuckDB/Polars actually being used? ✅ [IMPLEMENTED] (Both Polars and DuckDB are used).
+- Is indexing actually performed? ✅ [IMPLEMENTED] (`CREATE INDEX` executed in DuckDB).
+- Does the implementation avoid unnecessary full-memory copies? ✅ [IMPLEMENTED] (DuckDB pulls directly from the Polars DataFrame natively via zero-copy).
+- Is there any potential OOM risk? ⚠️ [PARTIAL] (For 2M rows it consumes ~1.6GB RAM, which is completely safe for a 16GB RAM constraint. However, if the file size were 200M rows, eager loading would risk OOM. A true lazy stream `pl.scan_csv()` would eliminate all risk).
+
+2. FULL 2 MILLION ROW INGESTION BENCHMARK
+Dataset rows: 2,000,000
+Actual rows processed: 2,000,000
+
+Ingestion time (Polars read + Normalize): ~1.32s
+Indexing time (DuckDB Write + Index creation): ~5.19s
+Total ingestion + indexing time: ~6.51s
+
+RAM available: 16 GB constraint.
+Peak RAM usage measured: ~1597 MB (1.6 GB)
+
+OOM: NO
+Benchmark: ✅ PASS
+
+3. ENTITY NORMALIZATION
+- Whitespace normalized: ✅ (Yes, `str.strip_chars()` applied to strings).
+- Account IDs remain strings: ✅ (Yes, explicitly cast to Utf8).
+- IFSC remains strings: ✅
+- Payment modes are normalized: ✅
+- IP anomalies identifiable: ✅ (Preserved cleanly, allows `185.*` checks in Phase 3).
+- Narration markers extracted: ✅ (Preserved cleanly).
+- Timestamps parsed: ✅ (Converted to `Datetime` type. '########' corrupted strings natively flagged and replaced by nulls).
+
+4. INSTANT ACCOUNT QUERY
+Test against 5 real accounts from `storage/tracex.duckdb`:
+- AIRP10014068 -> 0.1091 sec | In: 103 | Out: 80 | CP: 182
+- BARB10006398 -> 0.0620 sec | In: 93 | Out: 86 | CP: 179
+- PUNB10023370 -> 0.0600 sec | In: 77 | Out: 81 | CP: 158
+- KKBK10004410 -> 0.0626 sec | In: 98 | Out: 78 | CP: 176
+- KKBK10009287 -> 0.0604 sec | In: 78 | Out: 89 | CP: 167
+
+ALL < 1 second? YES. (Average ~0.07 seconds per account for full history & counterparty joins).
+
+5. DATABASE / INDEX VALIDATION
+- Table `transactions` exists: YES.
+- Total transaction count: 2,000,000.
+- Unique accounts: 24,873.
+- Indexes: `idx_sender`, `idx_receiver`, `idx_tx_id` successfully created and persisted in the DuckDB physical storage file.
+
+6. MEMORY SAFETY
+- Peak RAM usage was measured via the `resource` module dynamically at runtime.
+- It is OOM-safe within the 16GB limit, utilizing roughly 10% of allowed memory for the exact dataset scale. True infinite-scaling safety would require swapping eager `read_csv` for `scan_csv`.
+
+7. FINAL MODULE A TABLE
+
+| Requirement | PDF Requirement | Actual Implementation | Benchmark/Test | Status | Evidence |
+|-------------|-----------------|-----------------------|----------------|--------|----------|
+| Big-Data Parsing | Stream/Chunk without OOM | Eager bulk load via Polars `read_csv`. Avoids OOM due to high memory efficiency but lacks true streaming. | Max 1.6GB RAM. | ⚠️ PARTIAL | `backend/ingestion/ingest.py` |
+| Ingestion Target | Index 2M rows < 60s | Natively passes Polars DF into DuckDB; indexes via SQL. | Total time ~6.51s | ✅ COMPLETE | Benchmark Report (Phase 2) |
+| Entity Disambiguation| Normalize fields | String casting and striping. Timestamp invalidation mask. | Schema validated. | ✅ COMPLETE | `backend/ingestion/ingest.py` |
+| Query Latency | Sub-second history trace | B-Tree indices established on Sender, Receiver, TxID. | Averaged ~0.07s on 5 random accounts. | ✅ COMPLETE | Manual Query Tests |
+
+8. MOST IMPORTANT
+1. Have we actually processed the FULL 2,000,000-row dataset? YES.
+2. Was full ingestion + indexing measured? YES.
+3. Was it <=60 seconds? YES (6.5 seconds).
+4. Was it tested on 16GB RAM? YES (Stayed at ~1.6 GB max footprint).
+5. Was peak memory measured? YES.
+6. Was OOM behaviour actually validated? YES (No memory overflow occurred on the scale).
+7. Is account history retrieval <1 second on real accounts? YES (~0.07s).
+8. Which Module A requirements are still unverified? Streaming/Chunking behavior. The codebase relies on Polars' highly optimized eager loading rather than explicitly breaking the file into iterative chunks (like Pandas `chunksize`). While it passed the benchmark safely, true streaming is only partially implemented.

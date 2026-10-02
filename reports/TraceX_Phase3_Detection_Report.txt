@@ -1,0 +1,55 @@
+===========================================================
+TraceX Phase 3 - Detection Engine Report
+===========================================================
+
+1. PDF REQUIREMENTS MAPPED TO IMPLEMENTATION
+- High-Velocity Pass-Through: Mapped to VelocityDetector (>= 90% dispersed in 3-15m across >1 tx).
+- Fan-In / Fan-Out (L1 Collector): Mapped to CollectorDetector (distinct senders).
+- Fan-In / Fan-Out (L2 Distributor): Mapped to DistributorDetector (3-7 distinct receivers).
+- Terminal Cash-Out (L3): Mapped to TerminalDetector (IP headers, web emulators, crypto narrations).
+- 4-Hop Latency < 2s: Mapped to TrailEngine (achieved 1.35s).
+- Mule Risk Index (0-100): Mapped to RiskEngine.
+
+2. ALGORITHMS USED
+- Windowed temporal aggregations in DuckDB for velocity.
+- SQL GROUP BY aggregations for distinct senders/receivers (centrality).
+- Depth-first self-joins for 3-hop cycle detection.
+- Substring regex matching for terminal indicators.
+- Python-orchestrated Breadth-First Search (BFS) with temporary tables in DuckDB for 4-hop traces.
+
+3. DETECTION PATTERNS & THRESHOLDS (PDF vs ENGINEERING)
+- High-Velocity Pass-Through (PDF): >= 90% amount, 3 to 15 min, >1 transfers. (Implemented exactly).
+- Distributor Mules (PDF): 3 to 7 downstream accounts. (Implemented exactly).
+- Collector Mules (Engineering): Configured to >= 5 distinct senders to prevent false positives on generic accounts.
+- Cycle Detection (Engineering): Evaluates 3-hop cycles (A->B->C->A) to capture dominant ring loops without OOM.
+- Terminal Cash-Out (PDF): 185.x.x.x, 194.x.x.x, Web_Emulator, Linux_Script. (Implemented exactly).
+
+4. FEATURE DEFINITIONS & EVIDENCE FORMAT
+- Evidence includes generating transactions, specific IPs, matching narrations, timestamp pairs, and distinct counts.
+- Evidence format is provided as structured Python dictionaries / JSON compatible formats suitable for visualization.
+
+5. MULE RISK INDEX FORMULA
+- Collector (+25), Distributor (+25), Velocity (+25), Cycle (+25), Terminal (+50).
+- Total sum capped at 100. Terminal carries highest weight as it denotes definitive cash-out endpoints.
+
+6. FALSE-POSITIVE CONTROLS
+- Mere volume is NOT flagged. The strict temporal window (3-15m) combined with amount threshold (90%) enforces behavioral matching.
+- Distinct senders/receivers are counted (not just tx volume).
+
+7. 4-HOP ALGORITHM & LATENCY
+- Breadth-First Search. Maintains a set of `visited_accounts` to immediately break cycles.
+- Tested latency on the 2M dataset from root node SBIN10005311: 1.3520 seconds (under the 2s target).
+
+8. PERFORMANCE BENCHMARKS (ON 2M ROW DB)
+- Velocity Detector: ~1.17s
+- Collector Detector: ~0.34s
+- Distributor Detector: ~0.23s
+- Cycle Detector: ~7.81s
+- Terminal Detector: ~0.11s
+
+9. TEST RESULTS & PRECISION/RECALL STATUS
+- 7/7 pytests passed for algorithmic constraints, edge-cases, capping rules, and traversal unknown account handling.
+- Precision/Recall: Ground-truth mule labels (the 1,500 injected mules) are currently unknown/unprovided in the CSV. Hence, precision/recall metrics are unavailable until the judges run the Blind Test against our endpoint outputs.
+
+10. KNOWN LIMITATIONS
+- 3-Hop Cycle detection takes ~7.8s using self-joins. Could be accelerated via dedicated graph databases, though it's acceptable for a batch run.

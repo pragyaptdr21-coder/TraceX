@@ -1,0 +1,42 @@
+TRACE X PHASE 4.4 - TIMELINE AND PLAYBACK REPORT
+==================================================
+
+1. TIMELINE API USED
+--------------------------------------------------
+- Used `GET /api/accounts/{account_id}/timeline` which returns chronological transaction flow for the target account.
+- Combined the bounds (first/last timestamps) of this dataset with the `timestamp` fields from the `GET /api/accounts/{account_id}/trail` edges.
+
+2. 15-DAY RANGE HANDLING
+--------------------------------------------------
+- Handled dynamically by evaluating the `min` and `max` timestamps of the `timeline` request along with the timestamps of all multi-hop edges.
+- This creates an exact `[startTime, endTime]` window representing the complete temporal signature for that 4-hop cluster (which conforms to the 15-day range constraint).
+
+3. MINUTE-BY-MINUTE PLAYBACK IMPLEMENTATION
+--------------------------------------------------
+- Implemented a React `useEffect` interval that ticks forward every 200ms when playing.
+- Each tick advances the `currentTime` state by 1 minute multiplied by the user's selected playback speed multiplier (1x, 2x, 5x, 10x).
+- Playback stops automatically when reaching `endTime`.
+- Rendered an interactive scrubber for manual chronological seeking.
+
+4. GRAPH INTEGRATION & PERFORMANCE
+--------------------------------------------------
+- **Strictly Frontend Controlled**: The backend 4-Hop BFS is NOT re-run during playback. We run the BFS ONCE upon node request. 
+- The React component maintains `fullGraphData` in memory. As `currentTime` increments, we apply a rapid client-side filter (`edge.timestamp <= currentTime`). 
+- Only nodes connected to visible edges (plus the root source account) are retained in `graphData` and pushed to `ForceGraph2D`. This provides O(E) filter time, which is imperceptible and extremely responsive.
+
+5. HOP FILTER INTEGRATION
+--------------------------------------------------
+- The `Hop` limit setting triggers an API re-fetch.
+- Because `currentTime` is retained independently in React state, the filter organically applies to the incoming payload seamlessly, so timeline state persists across spatial hop changes.
+
+6. REAL-ACCOUNT VALIDATION & TESTS
+--------------------------------------------------
+- Validated manually using `HDFC10017550` loaded from Uvicorn.
+- Pressing Play steps through transaction dates seamlessly (e.g. SEP 15, SEP 16), spawning the nodes dynamically on-canvas in the exact order they interacted.
+- Verified Node/Edge intelligence clears its selected state gracefully if the selected edge is purged by a timeline reversal.
+- Confirmed there is no mock data used.
+
+7. KNOWN LIMITATIONS
+--------------------------------------------------
+- In scenarios with extremely sparse transactions over 15 days, normal playback can appear "stuck" doing nothing until the next transaction.
+- Timezone is displayed using client locale rather than strictly enforcing IST, which might be preferred for uniform Law Enforcement reading depending on jurisdiction.

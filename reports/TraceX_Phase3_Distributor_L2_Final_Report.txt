@@ -1,0 +1,229 @@
+TraceX Phase 3 - Distributor L2 Final Report
+=============================================
+
+OLD PROBLEM:
+The previous Distributor L2 implementation detected any fan-out of 3-7 distinct receivers within a 24-hour window following any inbound transaction. This led to massive false positives (1,384,689 detections across 23,638 accounts) because ordinary daily account activity was falsely attributed as "slicing" of specific incoming funds.
+
+NEW ALGORITHM:
+The new implementation requires strict attribution between the incoming funds and subsequent distribution.
+It guarantees that:
+1. The downstream transactions occur AFTER the specific incoming transaction.
+2. The downstream transactions occur BEFORE any subsequent incoming transaction (cross-inbound protection).
+3. The cumulative downstream amount closely matches the incoming amount.
+4. The distribution happens within a focused temporal window.
+5. The evidence is chronologically ordered.
+
+ENGINEERING CHOICES:
+The Problem Statement requires "High out-degree centrality, slicing incoming funds into 3-7 downstream accounts."
+To mathematically define "slicing", TraceX implemented these specific engineering choices:
+
+1. Temporal Attribution (4 hours): Reduced from 24 hours to 4 hours to distinguish rapid automated distribution from organic daily spending. We deliberately did NOT copy the 3-15 minute rule because the PDF restricts that specifically to L1 High-Velocity Pass-Through.
+2. Amount Attribution (50% to 150%): The sum of the subsequent outgoing transactions must fall between 0.5x and 1.5x of the inbound amount. This guarantees that we aren't flagging an account that receives ₹100 and sends ₹50,000 as "distributing" that ₹100.
+3. Cross-Inbound Protection: Uses a SQL Window function `LEAD(Timestamp)` to ensure outgoing transactions are only attributed to an incoming transaction if they happen before the NEXT incoming transaction.
+
+TESTS:
+All 9 edge-case test scenarios pass successfully (unit tests).
+
+BEFORE VS AFTER NUMBERS:
+Before detection rows: 1,384,689
+After detection rows: 11278
+
+Before unique accounts: 23,638
+After unique accounts: 8903
+
+Execution Time: 5.07 seconds
+Average detection rows per account: 1.27
+
+Receiver Counts (Unique Accounts):
+3 receivers: 7805
+4 receivers: 1461
+5 receivers: 229
+6 receivers: 73
+7 receivers: 2
+
+10 REAL EXAMPLES:
+
+Distributor account: AIRP10012562
+Incoming:
+Sender: PUNB10006912
+Receiver: AIRP10012562
+Amount: 1481.47
+Timestamp: 2026-09-20 04:41:06
+Transaction ID: TXN617720326
+
+Downstream:
+- Transaction ID: TXN289098923 | Receiver: ICIC10010427 | Amount: 325.95 | Timestamp: 2026-09-20 05:17:37
+- Transaction ID: TXN136115875 | Receiver: IPOS10005334 | Amount: 211.67 | Timestamp: 2026-09-20 06:45:50
+- Transaction ID: TXN354831176 | Receiver: AIRP10023043 | Amount: 1630.99 | Timestamp: 2026-09-20 08:13:56
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 2168.61
+Temporal relationship: 2026-09-20 04:41:06 -> 2026-09-20 05:17:37
+Attribution explanation: Account received 1481.47 and distributed 2168.61 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: AIRP10013312
+Incoming:
+Sender: SBIN10021304
+Receiver: AIRP10013312
+Amount: 5095.91
+Timestamp: 2026-09-29 06:58:42
+Transaction ID: TXN700163700
+
+Downstream:
+- Transaction ID: TXN778964901 | Receiver: IPOS10005074 | Amount: 830.65 | Timestamp: 2026-09-29 09:12:47
+- Transaction ID: TXN796788391 | Receiver: IPOS10001961 | Amount: 2644.65 | Timestamp: 2026-09-29 09:33:36
+- Transaction ID: TXN162749802 | Receiver: KKBK10020539 | Amount: 906.57 | Timestamp: 2026-09-29 09:39:47
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 4381.87
+Temporal relationship: 2026-09-29 06:58:42 -> 2026-09-29 09:12:47
+Attribution explanation: Account received 5095.91 and distributed 4381.87 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: AIRP10016847
+Incoming:
+Sender: PUNB10003203
+Receiver: AIRP10016847
+Amount: 5396.13
+Timestamp: 2026-09-23 16:32:20
+Transaction ID: TXN130092693
+
+Downstream:
+- Transaction ID: TXN786199204 | Receiver: PYTM10021961 | Amount: 4227.78 | Timestamp: 2026-09-23 17:20:50
+- Transaction ID: TXN441123778 | Receiver: IPOS10011280 | Amount: 266.55 | Timestamp: 2026-09-23 17:40:40
+- Transaction ID: TXN154209913 | Receiver: BARB10005143 | Amount: 659.21 | Timestamp: 2026-09-23 18:40:23
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 5153.54
+Temporal relationship: 2026-09-23 16:32:20 -> 2026-09-23 17:20:50
+Attribution explanation: Account received 5396.13 and distributed 5153.54 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: AXIS10001727
+Incoming:
+Sender: SBIN10013244
+Receiver: AXIS10001727
+Amount: 2048.46
+Timestamp: 2026-09-22 04:25:36
+Transaction ID: TXN406052256
+
+Downstream:
+- Transaction ID: TXN836054830 | Receiver: AIRP10015380 | Amount: 278.42 | Timestamp: 2026-09-22 04:25:53
+- Transaction ID: TXN731861272 | Receiver: BARB10005885 | Amount: 668.81 | Timestamp: 2026-09-22 06:02:06
+- Transaction ID: TXN128819062 | Receiver: IPOS10020481 | Amount: 825.49 | Timestamp: 2026-09-22 06:14:56
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 1772.72
+Temporal relationship: 2026-09-22 04:25:36 -> 2026-09-22 04:25:53
+Attribution explanation: Account received 2048.46 and distributed 1772.72 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: PUNB10014408
+Incoming:
+Sender: PUNB10022005
+Receiver: PUNB10014408
+Amount: 7373.62
+Timestamp: 2026-09-15 21:25:31
+Transaction ID: TXN556566325
+
+Downstream:
+- Transaction ID: TXN904955690 | Receiver: BARB10003611 | Amount: 1636.46 | Timestamp: 2026-09-15 21:43:10
+- Transaction ID: TXN439363138 | Receiver: IPOS10005665 | Amount: 4919.04 | Timestamp: 2026-09-15 22:06:24
+- Transaction ID: TXN396405297 | Receiver: HDFC10010751 | Amount: 468.46 | Timestamp: 2026-09-15 22:37:45
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 7023.96
+Temporal relationship: 2026-09-15 21:25:31 -> 2026-09-15 21:43:10
+Attribution explanation: Account received 7373.62 and distributed 7023.96 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: PUNB10004191
+Incoming:
+Sender: AXIS10015092
+Receiver: PUNB10004191
+Amount: 1734.18
+Timestamp: 2026-09-21 08:24:06
+Transaction ID: TXN736892120
+
+Downstream:
+- Transaction ID: TXN783901715 | Receiver: HDFC10006386 | Amount: 134.92 | Timestamp: 2026-09-21 09:57:05
+- Transaction ID: TXN347321385 | Receiver: AIRP10002577 | Amount: 145.99 | Timestamp: 2026-09-21 10:37:41
+- Transaction ID: TXN808805320 | Receiver: AXIS10017619 | Amount: 656.31 | Timestamp: 2026-09-21 12:16:56
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 937.2199999999999
+Temporal relationship: 2026-09-21 08:24:06 -> 2026-09-21 09:57:05
+Attribution explanation: Account received 1734.18 and distributed 937.2199999999999 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: PUNB10016378
+Incoming:
+Sender: ICIC10023519
+Receiver: PUNB10016378
+Amount: 6870.84
+Timestamp: 2026-09-20 23:33:29
+Transaction ID: TXN586876840
+
+Downstream:
+- Transaction ID: TXN543021187 | Receiver: KKBK10017788 | Amount: 887.2 | Timestamp: 2026-09-20 23:54:21
+- Transaction ID: TXN483409164 | Receiver: KKBK10016925 | Amount: 618.09 | Timestamp: 2026-09-21 00:00:14
+- Transaction ID: TXN730633962 | Receiver: ICIC10005457 | Amount: 4389.56 | Timestamp: 2026-09-21 01:59:03
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 5894.85
+Temporal relationship: 2026-09-20 23:33:29 -> 2026-09-20 23:54:21
+Attribution explanation: Account received 6870.84 and distributed 5894.85 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: SBIN10002992
+Incoming:
+Sender: AXIS10005559
+Receiver: SBIN10002992
+Amount: 4138.07
+Timestamp: 2026-09-26 01:11:38
+Transaction ID: TXN882010186
+
+Downstream:
+- Transaction ID: TXN479730984 | Receiver: PYTM10019824 | Amount: 2775.53 | Timestamp: 2026-09-26 03:21:42
+- Transaction ID: TXN277759743 | Receiver: KKBK10007303 | Amount: 1283.81 | Timestamp: 2026-09-26 03:58:42
+- Transaction ID: TXN725401353 | Receiver: KKBK10006937 | Amount: 803.5 | Timestamp: 2026-09-26 04:12:33
+- Transaction ID: TXN623533002 | Receiver: AXIS10003179 | Amount: 172.5 | Timestamp: 2026-09-26 04:47:19
+
+Distinct receivers: 4
+Cumulative associated outbound amount: 5035.34
+Temporal relationship: 2026-09-26 01:11:38 -> 2026-09-26 03:21:42
+Attribution explanation: Account received 4138.07 and distributed 5035.34 to 4 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: PYTM10011352
+Incoming:
+Sender: BARB10006840
+Receiver: PYTM10011352
+Amount: 8754.67
+Timestamp: 2026-09-23 15:37:35
+Transaction ID: TXN916577034
+
+Downstream:
+- Transaction ID: TXN173965315 | Receiver: AXIS10015074 | Amount: 330.01 | Timestamp: 2026-09-23 16:08:12
+- Transaction ID: TXN826211089 | Receiver: AXIS10011976 | Amount: 2115.36 | Timestamp: 2026-09-23 18:44:39
+- Transaction ID: TXN958303504 | Receiver: KKBK10013208 | Amount: 2909.4 | Timestamp: 2026-09-23 18:55:30
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 5354.77
+Temporal relationship: 2026-09-23 15:37:35 -> 2026-09-23 16:08:12
+Attribution explanation: Account received 8754.67 and distributed 5354.77 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+Distributor account: KKBK10024415
+Incoming:
+Sender: HDFC10022358
+Receiver: KKBK10024415
+Amount: 6032.89
+Timestamp: 2026-09-23 19:04:13
+Transaction ID: TXN767991862
+
+Downstream:
+- Transaction ID: TXN238861426 | Receiver: IPOS10018669 | Amount: 1002.18 | Timestamp: 2026-09-23 20:00:04
+- Transaction ID: TXN491903365 | Receiver: PYTM10011740 | Amount: 1524.37 | Timestamp: 2026-09-23 21:33:26
+- Transaction ID: TXN782006839 | Receiver: AXIS10020841 | Amount: 1569.34 | Timestamp: 2026-09-23 22:29:05
+
+Distinct receivers: 3
+Cumulative associated outbound amount: 4095.89
+Temporal relationship: 2026-09-23 19:04:13 -> 2026-09-23 20:00:04
+Attribution explanation: Account received 6032.89 and distributed 4095.89 to 3 distinct downstream accounts within 4 hours, representing strict slicing.
+----------------------------------------
+
+LIMITATIONS:
+The exact 4-hour window and 50-150% amount constraints are rigid. Some sophisticated mules might intentionally distribute amounts over multiple days or slice only 20% of an inbound to evade this strict attribution.

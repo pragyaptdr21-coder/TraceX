@@ -1,0 +1,39 @@
+===========================================================
+TraceX Phase 3 - Judge Explanation
+===========================================================
+
+Q1. How does TraceX detect a Collector Mule?
+A: TraceX groups all incoming transactions for a receiver and counts the *distinct* sender accounts. If 5 or more unique accounts send money to the same node, it's flagged as an L1 Collector Mule. It does not flag accounts just for having a high transaction count from the same sender.
+
+Q2. How does TraceX detect a Distributor Mule?
+A: TraceX groups all outgoing transactions for a sender and counts the *distinct* receiving accounts. If the funds are sliced to exactly 3 to 7 unique downstream accounts, it is flagged as an L2 Distributor Mule in accordance with the problem statement.
+
+Q3. How does TraceX detect high-velocity pass-through?
+A: TraceX links incoming funds to outgoing funds for an account. It checks if the outgoing transactions occurred between 3 to 15 minutes after the incoming deposit. Then, it sums those outgoing amounts. If the sum is >= 90% of the incoming amount, and involves more than one transfer, the account is flagged.
+
+Q4. How does TraceX detect cyclical smurfing?
+A: TraceX performs deep structural self-joins (up to 3 hops) in the backend to find paths where A sends to B, B sends to C, and C sends back to A within sequential timestamps. This detects the exact cycle without endless loops.
+
+Q5. How does TraceX identify terminal cash-out indicators?
+A: TraceX scans transaction metadata for strict string matches defined by the problem statement: originating IPs starting with '185.' or '194.', device types logging 'Web_Emulator' or 'Linux_Script', and narrations containing 'crypto', 'wallet', or 'p2p'.
+
+Q6. How is the Mule Risk Index calculated?
+A: An account starts at 0. It gains +25 points each for matching Collector, Distributor, Velocity, or Cycle patterns. It gains +50 for hitting a Terminal cash-out indicator, as this is strongly indicative of the end of the trail. The final score is capped at 100.
+
+Q7. How do you reduce false positives?
+A: We combine temporal bounds and distinct counterparty thresholds rather than looking at gross volume. E.g., we do not flag high volume accounts; we flag them ONLY if they disburse >=90% of a specific deposit within exactly 3 to 15 minutes.
+
+Q8. How do you trace 4 hops?
+A: We use a Breadth-First Search (BFS) graph traversal orchestrated in Python, dynamically querying the DuckDB backend level by level. It runs layer 0, finds layer 1, and proceeds up to layer 4.
+
+Q9. How do you ensure the algorithm works on unseen victim accounts?
+A: The BFS algorithm dynamically accepts any input string (Account ID) and explores the DuckDB index in real time. It is not hard-coded to any specific subset of nodes.
+
+Q10. How do you measure precision and recall?
+A: Our system generates explicit candidates for each label (L1, L2, L3). Since the 1,500 ground-truth labels are kept secret by the organizers, our tool is ready to ingest those labels when provided, immediately mapping true positives and false positives based on the candidate sets produced.
+
+Q11. Why are these algorithms suitable for 2 million transactions?
+A: Instead of slow row-by-row iteration in Python, we push the intensive filtering, grouping, and temporal joining directly to DuckDB's vectorized analytical engine. DuckDB executes these over millions of rows in milliseconds to a few seconds.
+
+Q12. How do you prevent a cycle from causing infinite traversal?
+A: The 4-hop engine maintains a strict `visited_accounts` Python hash set. If it sees an account it has already processed in a previous hop, it drops it from the current queue, immediately severing any infinite loops.

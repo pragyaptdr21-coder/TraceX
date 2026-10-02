@@ -1,0 +1,150 @@
+===========================================================
+TraceX Phase 3 - Module B Algorithm Implementation Audit
+===========================================================
+
+1. HIGH-VELOCITY PASS-THROUGH
+- A. Works per account? YES.
+- B. Calculate incoming transaction amount? YES.
+- C. Finds outgoing from same account? YES.
+- D. Timestamp difference calculation? YES.
+- E. 3-15 minute condition enforced? YES. (ACTUAL BEHAVIOR: The algorithm isolates individual outgoing transactions occurring strictly between 3-15 minutes after a specific incoming transaction, and sums their values within that window).
+- F. Calculates outgoing_amount_within_window / incoming_amount? YES.
+- G. Threshold >= 90%? YES.
+- H. Requires multiple outgoing transfers? YES (`count > 1`).
+- I. Avoids counting unrelated outgoing transactions? YES (Bound by the strict temporal window relative to the specific incoming timestamp).
+- J. Handles multiple incoming transactions? YES.
+- K. Generates evidence? YES (Account, Amounts, Ratio, TX IDs, Timestamps).
+- L. Attached to risk signal? YES.
+STATUS: ✅ COMPLETE
+
+2. FAN-IN / COLLECTOR MULE — L1
+- A. Directed graph? YES.
+- B. Incoming degree calculated? YES.
+- C. DISTINCT sender accounts counted? YES.
+- D. In-degree used for detection? YES.
+- E. "Multiple distinct senders" enforced? YES.
+- F. >=5 distinct senders: This is an explicit TRACEX ENGINEERING CHOICE, not a numeric PDF threshold.
+- G. Additional threshold? NO.
+- H. Avoids duplicate transactions as multiple senders? YES (SQL `COUNT(DISTINCT)` used).
+- I. Produces evidence? YES.
+- J. Passed into risk engine? YES.
+STATUS: ✅ COMPLETE
+
+3. FAN-OUT / DISTRIBUTOR MULE — L2
+- A. Outgoing degree calculated? YES.
+- B. DISTINCT receiver accounts counted? YES.
+- C. Exact 3-7 range enforced? YES (`BETWEEN 3 AND 7`).
+- D. High out-degree used? YES.
+- E. Relates incoming funds to outgoing distribution? NO. The ACTUAL code only queries `GROUP BY Sender_Account` and validates the 3-7 distinct downstream receivers. It does NOT temporally bind the outgoing distribution to a prior incoming deposit in the SQL query (unlike the Velocity algorithm).
+- F. Avoids counting repeated transfers as different accounts? YES (`COUNT(DISTINCT)`).
+- G. Produces evidence? YES (Receiver IDs, Outgoing Amount, Receiver count). (Note: Incoming amount is not mapped because it does not join the incoming ledger).
+- H. Passed into risk engine? YES.
+STATUS: ⚠️ PARTIAL
+
+4. TERMINAL CASH-OUT — L3
+- Payment Wallets/Crypto/P2P: String matching executed on lowercased `Narration` column (`%wallet%`, `%crypto%`, `%p2p%`).
+- Foreign IPs: Prefix matching (`185.%`, `194.%`). No artificial boundaries added.
+- Headless Scripts: Exact matching (`Web_Emulator`, `Linux_Script`).
+- Applied correctly? YES.
+- Terminal signal mapped? YES.
+- Evidence generated? YES (These indicators are correctly treated as detection signals/evidence, not deterministic proof of criminality).
+STATUS: ✅ COMPLETE
+
+5. MULTI-HOP TRACE
+- A. BFS implemented? YES.
+- C. Directed Sender->Receiver? YES.
+- D. Starts from supplied victim account? YES.
+- E. Maximum depth exactly 4 hops? YES.
+- F. Prevents infinite cycles? YES (Maintains a Python `visited_accounts` set to prune recursive nodes).
+- G. Preserves transaction info? YES.
+- H. Returns Hops 0-4? YES (Nodes structured with layer indices).
+- I. Identifies actual downstream accounts? YES.
+- J. Preserves TX IDs/Amounts/Timestamps? YES.
+- K. Suitable for Frontend? YES (Returns clean nodes/edges dictionary).
+STATUS: ✅ COMPLETE
+
+6. MULTI-HOP PERFORMANCE
+Target < 2s for 4-hop money trail.
+Tested Accounts (Arbitrary Database Entities):
+- PYTM10015476: ~1.56 sec
+- HDFC10018587: ~1.49 sec
+- KKBK10001721: ~1.45 sec
+- AXIS10003874: ~1.44 sec
+- ICIC10009882: ~1.46 sec
+Average: ~1.48 sec
+Maximum: ~1.56 sec
+All tested accounts <2 sec? YES.
+
+7. END-TO-END DETECTION FLOW
+The modules functionally chain together. Standalone detectors (Velocity, Collector, Distributor, Cycle, Terminal) output arrays of dictionaries containing evidence which are subsequently digested by the `RiskEngine` where they are aggregated by account ID to form a unified risk profile, making the results instantly accessible to the `TrailEngine`.
+
+8. RISK ENGINE INTEGRATION
+Every detected signal maps to a specific account string. Velocity, Collector, Distributor, Terminal, and Cycle signals are all ingested. 
+Final score bounded 0-100? YES (capped mathematically).
+Score explainable? YES (the exact signals pushing the score are appended to the entity JSON).
+Weights are entirely TRACEX ENGINEERING CHOICES: Collector(+25), Distributor(+25), Velocity(+25), Cycle(+25), Terminal(+50).
+
+9. BLIND VICTIM QUERY READINESS
+The backend natively processes arbitrary string inputs against the indexed DuckDB state. It does not rely on hardcoded victim IDs.
+
+10. FINAL AUDIT TABLE
+| Algorithm | PDF Requirement | Actual Code | Test | Benchmark | Status | Notes |
+|-----------|-----------------|-------------|------|-----------|--------|-------|
+| Velocity | >=90%, 3-15m, >1 tx | Windowed self-join | ✅ | ~1.17s | ✅ COMPLETE | Exact matching |
+| Collector | High in-degree, distinct senders | >=5 distinct senders | ✅ | ~0.34s | ✅ COMPLETE | 5 is an engineering choice |
+| Distributor| High out-degree, 3-7 receivers | Groups distinct outgoing. Does not tie to incoming. | ✅ | ~0.23s | ⚠️ PARTIAL | Lacks incoming constraint |
+| Terminal | IPs, Devices, Narration | Exact string matches | ✅ | ~0.11s | ✅ COMPLETE | Exact match |
+| 4-Hop BFS | <2s, 4 hops downstream | Natively orchestrated via Python/DuckDB | ✅ | ~1.48s avg | ✅ COMPLETE | Tested 5 random IDs |
+
+11. CRITICAL FINDINGS
+A. WHAT IS FULLY IMPLEMENTED:
+- Velocity temporal windowing and percentage dispersion bounding.
+- Terminal cash-out substring/metadata detection.
+- Sub-2 second BFS 4-Hop trail generation with cycle rejection.
+- Explainable Risk Engine capping.
+
+B. WHAT IS PARTIALLY IMPLEMENTED:
+- The Distributor L2 Mule logic currently exclusively evaluates outgoing fan-out topologies. The PDF phrase "slicing incoming funds" implies a causal temporal relationship between an incoming transaction and the distribution of those funds, which the current SQL logic does not enforce.
+
+C. WHAT IS ONLY DOCUMENTED BUT NOT VERIFIED IN CODE:
+- Precision and Recall metric evaluations. The testing apparatus is ready, but the actual calculation is impossible without the explicit list of the 1,500 ground-truth injected mule IDs.
+
+D. WHAT MUST BE FIXED BEFORE JUDGES TEST IT:
+- The Distributor (L2) SQL query ideally needs to be modified to enforce that the outgoing funds temporally follow an incoming transaction and represent a slice of that inbound volume.
+
+12. JUDGE ANSWERS
+Q1. What algorithm do you use for high-velocity detection?
+A: A windowed temporal self-join in DuckDB that pairs an incoming transaction to all subsequent outgoing transactions from that same account within 3-15 minutes.
+
+Q2. How do you calculate the 90% threshold?
+A: We sum the amounts of the outgoing transactions occurring in the 3-15 minute window, and trigger the flag if that sum divided by the specific incoming transaction amount is >= 0.90.
+
+Q3. How do you detect Collector Mules?
+A: By executing a fan-in centrality graph query, calculating the `COUNT(DISTINCT Sender_Account)` per receiver, and applying an engineering threshold of >= 5 distinct senders to filter out standard ecommerce noise.
+
+Q4. How do you detect Distributor Mules?
+A: By executing a fan-out centrality graph query, grouping outgoing transactions by sender, and enforcing the exact PDF constraint that the distinct downstream receivers fall strictly between 3 and 7.
+
+Q5. What graph features are used?
+A: In-degree (distinct senders), Out-degree (distinct receivers), sequential loops (3-hop cycles), and Breadth-First traversal maps.
+
+Q6. How do you detect terminal cash-out?
+A: By substring-matching narrations for wallet/crypto/p2p text, prefix-matching IPs for foreign blocks (185.x, 194.x), and exact-matching device headers for emulator scripts.
+
+Q7. What algorithm do you use for multi-hop tracing?
+A: A layer-based Breadth-First Search (BFS) graph traversal.
+
+Q8. Why BFS?
+A: BFS guarantees finding the shortest paths iteratively and allows us to easily enforce a firm hop-limit (depth boundary) while systematically building the layer array required by the frontend visualization.
+
+Q9. How many hops?
+A: Exactly 4 hops downstream.
+
+Q10. What is the measured 4-hop latency?
+A: Evaluated across 5 random arbitrary accounts spanning the 2M row graph, it averages ~1.48 seconds per trace.
+
+Q11. Can judges give an arbitrary victim account?
+A: Yes. The traversal queries the indexed graph dynamically in real-time based on any arbitrary string input.
+
+Q12. How is the detection result converted into a Mule Risk Index?
+A: Extracted detection arrays are fed into the Risk Engine which assigns localized scores (e.g., +25 for Velocity, +50 for Terminal Indicators) up to a rigid deterministic cap of 100. Each point addition is linked to the evidence object of the triggering algorithm.
