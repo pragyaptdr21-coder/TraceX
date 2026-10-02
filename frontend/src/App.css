@@ -430,3 +430,22 @@ html.dark .hover\:bg-blue-50:hover { background-color: #1e3a8a !important; borde
 /* Fix input fields */
 html.dark input.bg-white, html.dark textarea.bg-white { background-color: #1e293b !important; color: #f8fafc !important; }
 html.dark input:focus, html.dark textarea:focus { border-color: #38bdf8 !important; box-shadow: 0 0 0 2px rgba(56,189,248,0.2) !important; }
+
+/* HARDWARE ACCELERATION & SMOOTHNESS OPTIMIZATIONS */
+.tracex-app-shell,
+.tracex-app-shell *,
+.react-flow__node,
+.react-flow__edge {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  will-change: background-color, border-color, color;
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
+              border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
+              color 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* For ReactFlow specifically, avoid layout thrashing on drag */
+.react-flow__node.dragging {
+  will-change: transform;
+}
