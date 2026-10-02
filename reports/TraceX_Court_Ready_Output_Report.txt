@@ -1,0 +1,66 @@
+TRACE X - COURT-READY OUTPUT REPORT
+====================================
+
+Scope
+-----
+Added an explicit evidence-backed Section 91 Notice workflow without removing Case Diary, Freeze Requisition, existing PDF exports, graph, timeline, evidence, or detection features.
+
+Validation basis
+----------------
+- Real local DuckDB transaction data was used by automated tests.
+- Section 91 generation is deterministic and evidence-only when the optional AI service is unavailable.
+- Officer, FIR, authority, statutory, address, authorization, and case-reference fields remain explicit placeholders when absent.
+- Generated output is marked DRAFT / FOR HUMAN REVIEW and is not presented as issued legal notice.
+
+STATUS
+------
+Case Diary: PASS
+Existing Case Diary generation, review editing, approval, and PDF export remain available.
+
+Section 91 Notice: PASS
+Added structured generation, preview tab, human review, approval, and dedicated PDF export endpoint.
+
+Freeze Requisition: PASS
+Existing generation, draft warning, human review, approval, and PDF export remain intact.
+
+Evidence grounding: PASS
+Notice content is generated from supplied source account, trail transactions, IFSC values, risk signals, amounts, timestamps, and transaction IDs only.
+
+Factual accuracy validation: PASS
+Automated tests verify real account IDs, transaction IDs, amounts, timestamps, IFSC values, and detection labels are present from source evidence.
+
+Human review: PASS
+Section 91, Case Diary, and Freeze outputs enter editable review mode before approval/export.
+
+PDF export: PASS
+Dedicated Section 91 PDF endpoint returns a valid PDF; existing Case Diary and Freeze PDF endpoints remain unchanged.
+
+Anti-hallucination validation: PASS
+Unavailable fields are marked "Not provided in source evidence". Tests verify no fabricated FIR reference or officer identity is introduced. Dataset text is treated as evidence, not instructions.
+
+Real-data validation: PASS
+Tests use a real account and transaction selected from storage/tracex.duckdb. Existing API and court-ready tests pass.
+
+Automated tests: PASS
+- tests/test_court_ready.py: 2 passed
+- tests/test_api.py: 10 passed during final feature validation
+- Full existing suite before this output change: 34 passed
+- Frontend production build: PASS
+
+Files modified
+--------------
+- backend/ai_service.py
+- backend/api.py
+- frontend/src/api.ts
+- frontend/src/pages/CaseDiary.tsx
+- tests/test_court_ready.py
+- reports/TraceX_Court_Ready_Output_Report.txt
+
+New endpoints
+-------------
+POST /api/section-91-notice/generate
+POST /api/section-91-notice/export
+
+Review limitation
+-----------------
+The generated document is an evidence-backed draft and requires completion of unavailable authority, officer, case-reference, and approval fields by an authorized human reviewer before any official use.

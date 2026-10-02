@@ -115,6 +115,11 @@ export const generateFreezeRequisition = async (evidenceData: any) => {
   return response.data.data;
 };
 
+export const generateSection91Notice = async (evidenceData: any) => {
+  const response = await api.post('/api/section-91-notice/generate', { evidence_data: evidenceData });
+  return response.data.data;
+};
+
 export const exportCaseDiary = async (title: string, content: string) => {
   const response = await api.post('/api/case-diary/export', { title, content }, { responseType: 'blob' });
   return response.data;
@@ -122,5 +127,10 @@ export const exportCaseDiary = async (title: string, content: string) => {
 
 export const exportFreezeRequisition = async (title: string, content: string) => {
   const response = await api.post('/api/freeze-requisition/export', { title, content }, { responseType: 'blob' });
+  return response.data;
+};
+
+export const exportSection91Notice = async (title: string, content: string) => {
+  const response = await api.post('/api/section-91-notice/export', { title, content }, { responseType: 'blob' });
   return response.data;
 };

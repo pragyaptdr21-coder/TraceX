@@ -248,7 +248,7 @@ from typing import List
 from fastapi.responses import StreamingResponse, Response
 import io
 import csv
-from .ai_service import generate_case_summary, generate_freeze_requisition
+from .ai_service import generate_case_summary, generate_freeze_requisition, generate_section_91_notice
 from .pdf_service import export_pdf
 
 class EvidencePayload(BaseModel):
@@ -268,6 +268,11 @@ def api_generate_freeze_requisition(req: EvidencePayload):
     draft = generate_freeze_requisition(req.evidence_data)
     return {"success": True, "data": draft}
 
+@app.post("/api/section-91-notice/generate")
+def api_generate_section_91_notice(req: EvidencePayload):
+    notice = generate_section_91_notice(req.evidence_data)
+    return {"success": True, "data": notice}
+
 @app.post("/api/case-diary/export")
 def api_export_case_diary(req: ExportPDFPayload):
     pdf_bytes = export_pdf(req.title, req.content)
@@ -284,6 +289,15 @@ def api_export_freeze_requisition(req: ExportPDFPayload):
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=Freeze_Requisition.pdf"}
+    )
+
+@app.post("/api/section-91-notice/export")
+def api_export_section_91_notice(req: ExportPDFPayload):
+    pdf_bytes = export_pdf(req.title, req.content)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=Section_91_Notice.pdf"}
     )
 
 class ExportRequest(BaseModel):

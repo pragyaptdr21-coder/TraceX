@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ShieldAlert, BookOpen, FileText, Download, Activity, CheckCircle, Crosshair } from 'lucide-react';
-import { getTrail, getAccount, generateCaseSummary, generateFreezeRequisition, exportCaseDiary, exportFreezeRequisition } from '../api';
+import { getTrail, getAccount, generateCaseSummary, generateFreezeRequisition, generateSection91Notice, exportCaseDiary, exportFreezeRequisition, exportSection91Notice } from '../api';
 
 export default function CaseDiary() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -12,10 +12,11 @@ export default function CaseDiary() {
   const [error, setError] = useState<string | null>(null);
 
   const [evidenceData, setEvidenceData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'summary' | 'freeze'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'section91' | 'freeze'>('summary');
   
   const [caseSummary, setCaseSummary] = useState<string | null>(null);
   const [freezeRequisition, setFreezeRequisition] = useState<string | null>(null);
+  const [section91Notice, setSection91Notice] = useState<string | null>(null);
 
   const [reviewMode, setReviewMode] = useState(false);
   const [editableText, setEditableText] = useState("");
@@ -26,6 +27,7 @@ export default function CaseDiary() {
     setError(null);
     setCaseSummary(null);
     setFreezeRequisition(null);
+    setSection91Notice(null);
     setReviewMode(false);
     
     try {
@@ -86,9 +88,28 @@ export default function CaseDiary() {
     }
   };
 
+  const handleGenerateSection91 = async () => {
+    if (!evidenceData) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const draft = await generateSection91Notice(evidenceData);
+      setSection91Notice(draft);
+      setReviewMode(true);
+      setEditableText(draft);
+      setActiveTab('section91');
+    } catch (err) {
+      setError("Unable to generate Section 91 draft.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleApprove = () => {
     if (activeTab === 'summary') {
       setCaseSummary(editableText);
+    } else if (activeTab === 'section91') {
+      setSection91Notice(editableText);
     } else {
       setFreezeRequisition(editableText);
     }
@@ -104,6 +125,14 @@ export default function CaseDiary() {
         a.href = url;
         a.download = `Case_Diary_${accountId}.pdf`;
         a.click();
+      } else if (activeTab === 'section91' && section91Notice) {
+        const blob = await exportSection91Notice(`Section 91 Notice: ${accountId}`, section91Notice);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Section_91_Notice_${accountId}.pdf`;
+        a.click();
+        window.URL.revokeObjectURL(url);
       } else if (activeTab === 'freeze' && freezeRequisition) {
         const blob = await exportFreezeRequisition(`Draft Freeze Requisition: ${accountId}`, freezeRequisition);
         const url = window.URL.createObjectURL(blob);
@@ -200,6 +229,9 @@ export default function CaseDiary() {
                   <button onClick={handleGenerateFreeze} className="w-full px-4 py-3 border border-red-200 text-red-600 bg-white text-sm font-semibold rounded-lg shadow-sm hover:bg-red-50 flex items-center justify-center gap-2 transition-colors">
                      <ShieldAlert size={16} /> Generate Freeze Requisition
                   </button>
+                  <button onClick={handleGenerateSection91} className="w-full px-4 py-3 border border-blue-200 text-blue-700 bg-white text-sm font-semibold rounded-lg shadow-sm hover:bg-blue-50 flex items-center justify-center gap-2 transition-colors">
+                    <FileText size={16} /> Generate Section 91 Notice
+                  </button>
                </div>
             </div>
 
@@ -209,10 +241,13 @@ export default function CaseDiary() {
                   <button onClick={() => setActiveTab('summary')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'summary' ? 'border-b-2 border-[#9f7aea] text-[#9f7aea] bg-white' : 'text-gray-500 hover:text-gray-800'}`}>
                     Case Summary
                   </button>
+                  <button onClick={() => setActiveTab('section91')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'section91' ? 'border-b-2 border-[#2563eb] text-[#2563eb] bg-white' : 'text-gray-500 hover:text-gray-800'}`}>
+                    Section 91 Notice
+                  </button>
                   <button onClick={() => setActiveTab('freeze')} className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 text-sm font-semibold transition-colors ${activeTab === 'freeze' ? 'border-b-2 border-[#9f7aea] text-[#9f7aea] bg-white' : 'text-gray-500 hover:text-gray-800'}`}>
                     Freeze Requisition
                   </button>
-                  {((activeTab === 'summary' && caseSummary) || (activeTab === 'freeze' && freezeRequisition)) && !reviewMode && (
+                  {((activeTab === 'summary' && caseSummary) || (activeTab === 'section91' && section91Notice) || (activeTab === 'freeze' && freezeRequisition)) && !reviewMode && (
                      <div className="px-4 py-2 flex items-center border-l border-gray-200">
                         <button onClick={handleExport} className="px-4 py-2 bg-[#9f7aea] text-white text-xs font-bold rounded-md shadow-sm hover:bg-[#805ad5] flex items-center gap-2 transition-colors">
                            <Download size={14} /> Export PDF
@@ -248,6 +283,21 @@ export default function CaseDiary() {
                            <div className="text-gray-400 text-center mt-20 flex flex-col items-center">
                              <FileText size={48} className="mb-4 text-gray-200" />
                              Click "Generate Case Summary" to analyze the evidence.
+                           </div>
+                        )
+                     )}
+                     {activeTab === 'section91' && (
+                        section91Notice ? (
+                           <>
+                             <div className="bg-blue-50 border border-blue-200 text-blue-700 p-4 rounded-lg text-xs font-bold mb-4 flex items-center gap-2 shadow-sm">
+                               <FileText size={16} /> DRAFT SECTION 94 BNSS / SECTION 91 CrPC CORRESPONDING NOTICE - REQUIRES HUMAN REVIEW
+                             </div>
+                             <pre className="whitespace-pre-wrap font-sans text-sm bg-gray-50 p-6 rounded-lg border border-gray-100">{section91Notice}</pre>
+                           </>
+                        ) : (
+                           <div className="text-gray-400 text-center mt-20 flex flex-col items-center">
+                             <FileText size={48} className="mb-4 text-gray-200" />
+                             Generate a Section 91 draft from the loaded evidence.
                            </div>
                         )
                      )}

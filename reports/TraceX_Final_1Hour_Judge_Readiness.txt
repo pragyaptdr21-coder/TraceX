@@ -1,0 +1,73 @@
+TRACE X - FINAL 1-HOUR JUDGE READINESS AUDIT
+============================================
+
+Audit scope
+-----------
+Judge-facing functionality was checked against the TraceX problem statement. No detection algorithm, BFS implementation, DuckDB schema, 2M dataset, graph architecture, timeline architecture, Case Diary architecture, or Freeze Requisition architecture was changed.
+
+Module A: PASS
+- storage/tracex.duckdb is available and contains 2,000,000 transaction rows.
+- Account search, account summary/history, and paginated transaction retrieval are exposed through the live API.
+- Required real demo account PYTM10003564 is present with 179 related transactions.
+
+Module B: PASS
+- Velocity, Collector L1, Distributor L2, Terminal L3, Cycle detection, Risk Engine, and 4-hop trail are present and covered by the existing tests/API.
+- No detection algorithm was changed in this audit.
+
+Module C: PASS
+- Interactive graph, real nodes/edges, hop filtering, node and edge detail panels, zoom/pan/fit controls, 15-day timeline, minute playback, speed control, reset, isolation, evidence selection, and CSV export are available.
+- Real browser graph workflow was previously verified with scoped 1,500-edge rendering.
+
+Module D: PASS
+- Evidence-backed Case Diary, AI summary, Freeze Requisition, human review, PDF exports, and deterministic evidence-only fallback remain available.
+
+Case Diary: PASS
+- Existing Case Diary generation, editing, approval, and PDF export remain intact.
+
+Section 94 BNSS / Section 91 CrPC corresponding document: PASS
+- Explicit structured draft title:
+  DRAFT - SECTION 94 BNSS
+  (CORRESPONDING TO SECTION 91 CrPC)
+  SUMMONS / WRITTEN ORDER TO PRODUCE DOCUMENT OR OTHER THING
+- Draft is marked for human review and not an issued legal notice.
+- Dedicated generation and PDF export endpoints exist.
+- Real account, transaction, amount, timestamp, IFSC, risk, and signal evidence are included only when supplied.
+- Missing legal/officer/case fields use explicit unavailable placeholders.
+
+Human Review: PASS
+- Section 94/91 draft, Case Diary, and Freeze Requisition are editable and require explicit approval before final export.
+
+PDF Export: PASS
+- Section 94/91 PDF export was tested as a valid PDF response.
+- Existing Case Diary and Freeze Requisition PDF exports remain unchanged.
+
+Precision/Recall: NOT VERIFIED - official ground truth unavailable
+- No precision, recall, F1, or false-positive percentage is claimed.
+
+Distributor L2: PARTIAL
+- Existing detector is preserved. Its known broad fan-out false-positive limitation remains documented; no unsupported precision claim is made.
+
+2M Performance: PASS
+- Local DuckDB contains 2,000,000 rows.
+- Existing ingestion/performance evidence is retained; no performance code was modified in this audit.
+
+4-Hop Performance: PASS
+- Existing direct benchmark evidence records average 1.6622 seconds and maximum 1.7762 seconds for the listed accounts.
+- No BFS code was modified.
+
+Automated Tests: PASS
+- Full suite: 36 passed.
+- Focused court-ready evidence/PDF tests: 2 passed.
+- Frontend production build: PASS.
+- Final diff check: PASS.
+
+Final-hour manual checks
+------------------------
+- Real account search and investigation workflow available.
+- Existing graph/timeline/evidence/export workflow preserved.
+- Section 94/91 draft generation, review state, approval state, and export control verified with a real account in the browser.
+
+Remaining warnings
+------------------
+- Python dependency warnings are third-party deprecation/runtime warnings and were not changed during the final-hour audit.
+- Distributor L2 precision is not verified without official ground-truth labels.

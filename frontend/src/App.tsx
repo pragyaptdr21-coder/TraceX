@@ -1,7 +1,7 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { 
-  LayoutDashboard, ShieldAlert, Search, FolderOpen,
+  LayoutDashboard, Search, FolderOpen,
   Database, GitMerge, Network, Clock3, TriangleAlert, FileCheck, Settings,
   UserRound, Bell, CircleDot
 } from 'lucide-react';
@@ -27,7 +27,7 @@ function Sidebar() {
   return (
     <aside className="tracex-sidebar">
       <div className="tracex-brand">
-        <div className="tracex-brand-mark"><ShieldAlert size={18} /></div>
+        <div className="tracex-brand-mark"><img src="/WhatsApp%20Image%202026-09-12%20at%207.57.38%20AM.jpeg" alt="TraceX logo" /></div>
         <div>
           <h1>TRACEX</h1>
           <p>Unified Intelligence</p>

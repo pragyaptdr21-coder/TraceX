@@ -17,7 +17,8 @@
 }
 
 .tracex-brand { height: 76px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid #edf0f4; }
-.tracex-brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: #fff; background: #172033; }
+.tracex-brand-mark { width: 34px; height: 34px; display: grid; place-items: center; overflow: hidden; border-radius: 6px; background: #071126; }
+.tracex-brand-mark img { width: 100%; height: 100%; object-fit: cover; }
 .tracex-brand h1 { margin: 0; color: #172033; font-size: 16px; letter-spacing: .08em; font-weight: 800; }
 .tracex-brand p { margin: 2px 0 0; color: #7d8999; font-size: 9px; font-weight: 700; letter-spacing: .04em; }
 .tracex-sidebar-body { flex: 1; padding-top: 20px; overflow-y: auto; }

@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime, timezone
 from google import genai
 
 # System instruction to prevent hallucination and prompt injection
@@ -96,6 +97,60 @@ Include:
             
     # Deterministic evidence-only fallback when the optional AI service is unavailable.
     return _mock_freeze_requisition(evidence_data)
+
+def generate_section_91_notice(evidence_data: dict) -> str:
+    """Build a deterministic Section 91 draft from supplied evidence only."""
+    source_account = evidence_data.get("source_account") or "Not provided in source evidence"
+    transactions = evidence_data.get("transactions") or []
+    risk = evidence_data.get("risk_information") or {}
+    signals = risk.get("signals") or []
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    account_ids = {source_account}
+    transaction_lines = []
+    timestamps = []
+    for transaction in transactions:
+        sender = transaction.get("source") or transaction.get("Sender_Account")
+        receiver = transaction.get("target") or transaction.get("Receiver_Account")
+        tx_id = transaction.get("transaction_id") or transaction.get("Transaction_ID")
+        timestamp = transaction.get("timestamp") or transaction.get("Timestamp")
+        amount = transaction.get("amount") or transaction.get("Amount")
+        sender_ifsc = transaction.get("sender_ifsc") or transaction.get("Sender_IFSC") or "Not provided in source evidence"
+        receiver_ifsc = transaction.get("receiver_ifsc") or transaction.get("Receiver_IFSC") or "Not provided in source evidence"
+        if sender:
+            account_ids.add(sender)
+        if receiver:
+            account_ids.add(receiver)
+        if timestamp:
+            timestamps.append(str(timestamp))
+        if tx_id:
+            transaction_lines.append(
+                f"- Transaction ID: {tx_id}; Sender: {sender or 'Not provided in source evidence'}; "
+                f"Receiver: {receiver or 'Not provided in source evidence'}; Amount: {amount if amount is not None else 'Not provided in source evidence'}; "
+                f"Timestamp: {timestamp or 'Not provided in source evidence'}; Sender IFSC: {sender_ifsc}; Receiver IFSC: {receiver_ifsc}"
+            )
+
+    period = f"{min(timestamps)} to {max(timestamps)}" if timestamps else "Not provided in source evidence"
+    signal_text = ", ".join(signal.get("type", "") for signal in signals if signal.get("type")) or "None recorded in source evidence"
+    account_text = "\n".join(f"- {account_id}" for account_id in sorted(account_ids))
+    evidence_text = "\n".join(transaction_lines[:100]) or "- No transaction records selected in current evidence"
+
+    return f"""DRAFT - SECTION 91 NOTICE\nFOR HUMAN REVIEW - NOT AN ISSUED LEGAL NOTICE\n\nNotice Reference: Not provided in source evidence\nGenerated At (UTC): {generated_at}\nCase/FIR Reference: Not provided in source evidence\nInvestigating Authority: ______________________________\nInvestigating Officer: ________________________________\n\n1. SUBJECT / ACCOUNT IDENTIFICATION\nThe current TraceX evidence concerns the following identified account/entity records:\n{account_text}\n\n2. RELEVANT TRANSACTION PERIOD\n{period}\n\n3. PURPOSE OF INFORMATION REQUEST\nThis draft requests preservation and production of records relevant to the observed transaction flow and detected signals in the supplied TraceX evidence. It does not make a final legal or criminal finding.\n\n4. SPECIFIC RECORDS REQUESTED\n- Account opening and KYC records for the identified accounts, if held by the recipient institution.\n- Statements and transaction records corresponding to the referenced transaction IDs and period.\n- Available beneficiary, remitter, IFSC, channel, and audit records associated with those transactions.\n- Records needed to preserve the identified evidence for authorized human review.\n\n5. OBSERVED TRACE X SIGNALS\nRisk index: {risk.get('mule_risk_index', 'Not provided in source evidence')}\nDetected signals: {signal_text}\nThese are investigative indicators reported by TraceX and are not a final legal conclusion.\n\n6. TRANSACTION / EVIDENCE REFERENCES\n{evidence_text}\n\n7. LIMITATIONS\nOfficer identity, case/FIR number, recipient institution, address, statutory particulars, and authorization details are not provided in the current TraceX evidence and must be completed by an authorized reviewer.\n\n8. REVIEW AND APPROVAL\nReview status: DRAFT / HUMAN REVIEW REQUIRED\nReviewer name: ______________________________\nReviewer designation: ________________________\nSignature: ___________________________________\nDate: ________________________________________\nApproval/reference number: ____________________\n"""
+
+_legacy_section_91_notice = generate_section_91_notice
+
+def generate_section_91_notice(evidence_data: dict) -> str:
+    """Apply the required BNSS/CrPC corresponding heading to the existing draft."""
+    legacy = _legacy_section_91_notice(evidence_data)
+    body = legacy.split("\n", 1)[1] if "\n" in legacy else legacy
+    heading = (
+        "DRAFT - SECTION 94 BNSS\n"
+        "(CORRESPONDING TO SECTION 91 CrPC)\n"
+        "SUMMONS / WRITTEN ORDER TO PRODUCE DOCUMENT OR OTHER THING\n"
+        "DRAFT - FOR HUMAN REVIEW\n"
+        "NOT AN ISSUED LEGAL NOTICE"
+    )
+    return f"{heading}\n{body}"
 
 def _mock_case_summary(evidence: dict) -> str:
     """Deterministic fallback when AI is unavailable."""
